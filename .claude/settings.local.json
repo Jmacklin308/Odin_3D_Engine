@@ -3,7 +3,9 @@
     "allow": [
       "Bash(odin check:*)",
       "Bash(odin build:*)",
-      "Bash(ls c:/dev/odin/3D_Engine/*.exe)"
+      "Bash(ls c:/dev/odin/3D_Engine/*.exe)",
+      "Bash(where odin:*)",
+      "Read(//c//**)"
     ]
   }
 }
