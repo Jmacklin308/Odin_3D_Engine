@@ -1,0 +1,55 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build",
+            "type": "shell",
+            "command": "odin build . -out:3D_Engine.exe",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": {
+                "owner": "odin",
+                "fileLocation": "absolute",
+                "pattern": {
+                    "regexp": "^(.+)\\((\\d+):(\\d+)\\)\\s+(Error|Warning):\\s+(.+)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+        },
+        {
+            "label": "Run",
+            "type": "shell",
+            "command": "odin run . -out:3D_Engine.exe",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared"
+            },
+            "problemMatcher": {
+                "owner": "odin",
+                "fileLocation": "absolute",
+                "pattern": {
+                    "regexp": "^(.+)\\((\\d+):(\\d+)\\)\\s+(Error|Warning):\\s+(.+)$",
+                    "file": 1,
+                    "line": 2,
+                    "column": 3,
+                    "severity": 4,
+                    "message": 5
+                }
+            }
+        }
+    ]
+}

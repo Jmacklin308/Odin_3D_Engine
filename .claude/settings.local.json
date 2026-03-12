@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(odin check:*)",
+      "Bash(odin build:*)",
+      "Bash(ls c:/dev/odin/3D_Engine/*.exe)"
+    ]
+  }
+}
