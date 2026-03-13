@@ -97,18 +97,16 @@ Camera_Move :: proc(cam: ^Camera, delta: Vec3) {
 }
 
 // Move along the camera's local axes (forward/right/up).
-// This is what you want for WASD movement.
+// W/S moves in the full 3D direction the camera faces (including pitch).
+// Q/E moves along the camera's local up, so it tilts with the pitch.
 Camera_Move_Local :: proc(cam: ^Camera, forward, right, up: f32) {
-	fwd   := Camera_Get_Forward(cam)
-	rgt   := Camera_Get_Right(cam)
-	// Flatten forward onto XZ so moving forward doesn't change altitude.
-	// Remove this if you want flying/noclip movement.
-	fwd.y = 0
-	fwd   = Vec3_Normalize(fwd)
+	fwd := Camera_Get_Forward(cam)
+	rgt := Camera_Get_Right(cam)
+	upr := Vec3_Normalize(Vec3_Cross(rgt, fwd))
 
 	cam.position += fwd * forward
 	cam.position += rgt * right
-	cam.position += VEC3_UP * up
+	cam.position += upr * up
 	cam.dirty = true
 }
 
