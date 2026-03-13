@@ -33,6 +33,10 @@ Renderer :: struct {
 	viewMat:  eng.Mat4,
 	projMat:  eng.Mat4,
 	viewPos:  eng.Vec3,
+
+	// Debug overlays
+	grid:      Grid,
+	gridReady: bool,
 }
 
 Renderer_Init :: proc(renderer: ^Renderer) -> bool {
@@ -44,10 +48,20 @@ Renderer_Init :: proc(renderer: ^Renderer) -> bool {
 	renderer.defaultShader = shader
 	renderer.clearColor    = {0.1, 0.1, 0.15, 1.0}
 	renderer.light         = DEFAULT_LIGHT
+
+	cfg := eng.Get_Config()
+	if cfg.debug.showGrid {
+		renderer.gridReady = Grid_Init(&renderer.grid)
+		if !renderer.gridReady {
+			fmt.eprintln("[Renderer] Grid init failed — continuing without grid.")
+		}
+	}
+
 	return true
 }
 
 Renderer_Shutdown :: proc(renderer: ^Renderer) {
+	if renderer.gridReady do Grid_Destroy(&renderer.grid)
 	Shader_Destroy(&renderer.defaultShader)
 }
 
@@ -77,6 +91,24 @@ Renderer_Begin :: proc(renderer: ^Renderer, cam: ^eng.Camera, aspect: f32) {
 // Call at the end of each frame.
 Renderer_End :: proc(renderer: ^Renderer) {
 	Shader_Unbind()
+}
+
+// Draw the debug grid. Call after all opaque geometry, before Renderer_End.
+// No-op if showGrid is false or grid failed to init.
+Renderer_Draw_Grid :: proc(renderer: ^Renderer) {
+	if !renderer.gridReady do return
+
+	cfg := eng.Get_Config()
+	if !cfg.debug.showGrid do return
+
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+	gl.Disable(gl.CULL_FACE)
+
+	Grid_Draw(&renderer.grid, renderer.viewMat, renderer.projMat, renderer.viewPos, cfg.debug)
+
+	gl.Disable(gl.BLEND)
+	gl.Enable(gl.CULL_FACE)
 }
 
 // Draw a mesh with a model matrix and a solid RGB colour.

@@ -38,18 +38,6 @@ import "vendor:glfw"
 import "core:fmt"
 
 // =============================================================================
-// Engine Config
-// =============================================================================
-
-EngineConfig :: struct {
-	window: WindowConfig,
-}
-
-DEFAULT_CONFIG :: EngineConfig{
-	window = DEFAULT_WINDOW_CONFIG,
-}
-
-// =============================================================================
 // Engine State
 // =============================================================================
 
@@ -60,6 +48,7 @@ _eng: _EngineState
 _EngineState :: struct {
 	window:  Window,
 	input:   Input,
+	config:  EngineConfig,
 	running: bool,
 
 	// Timing
@@ -77,6 +66,7 @@ Init :: proc(cfg: EngineConfig = DEFAULT_CONFIG) -> bool {
 	win, winOk := Window_Create(cfg.window)
 	if !winOk do return false
 	_eng.window = win
+	_eng.config = cfg
 
 	Input_Setup_Callbacks(&_eng.input, &_eng.window)
 
@@ -151,4 +141,8 @@ Get_Delta_Time :: proc() -> f32 {
 
 Get_FPS :: proc() -> f32 {
 	return _eng.smoothFps
+}
+
+Get_Config :: proc() -> EngineConfig {
+	return _eng.config
 }

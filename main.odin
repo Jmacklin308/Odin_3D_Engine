@@ -5,7 +5,11 @@ import rend "renderer"
 import "core:fmt"
 
 main :: proc() {
-	if !eng.Init() do return
+	//load our config
+	cfg := eng.DEFAULT_CONFIG
+	cfg.debug.showGrid = true
+	
+	if !eng.Init(cfg) do return
 	defer eng.Shutdown()
 
 	r: rend.Renderer
@@ -59,6 +63,7 @@ main :: proc() {
 		planeModel := eng.Mat4_Translate({0, -0.5, 0})
 		rend.Renderer_Draw_Mesh(&r, &plane, planeModel, {0.3, 0.6, 0.3})
 
+		rend.Renderer_Draw_Grid(&r)
 		rend.Renderer_End(&r)
 		eng.End_Frame()
 	}
