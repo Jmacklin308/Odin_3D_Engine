@@ -25,18 +25,20 @@
 ## Project Structure
 
 ```
-engine/
-├── engine.odin    — Lifecycle, game loop management, global accessors
+engine/    (package engine)
+├── engine.odin    — Lifecycle, game loop, global accessors
 ├── math.odin      — Vec2/3/4, Mat4, Quat, Transform, common operations
 ├── window.odin    — Window creation via GLFW, OpenGL context setup
 ├── input.odin     — Keyboard and mouse input (polling + edge detection)
-├── camera.odin    — FPS-style camera with lazy matrix caching
+└── camera.odin    — FPS-style camera with lazy matrix caching
+
+renderer/  (package renderer)
+├── renderer.odin  — Blinn-Phong renderer, draw calls, lighting
 ├── mesh.odin      — GPU mesh upload, draw calls, built-in primitives
-├── shader.odin    — GLSL shader compilation, uniform setters
-└── renderer.odin  — Blinn-Phong renderer, draw calls, lighting
+└── shader.odin    — GLSL shader compilation, uniform setters
 ```
 
-One package. Import it and go.
+Two packages. Both are imported separately. The renderer depends on the engine for math types and camera, but the engine knows nothing about the renderer — keeping the dependency one-directional.
 
 ---
 
@@ -48,26 +50,33 @@ One package. Import it and go.
 - The Odin `vendor` libraries (bundled with the compiler): `glfw`, `OpenGL`
 - A GPU that supports OpenGL 4.1+ (anything made after 2012, basically)
 
-### Import the Package
+### Import the Packages
 
 In your project's main file:
 
 ```odin
-import eng "path/to/engine"
+import eng  "engine"
+import rend "renderer"
 ```
 
-The path is relative to your project root or absolute — same rules as any Odin import.
+Both paths are relative to your project root. The `engine` package provides the game loop, input, camera, and math. The `renderer` package provides meshes, shaders, and draw calls.
 
 ### Minimal Example
 
 ```odin
 package main
 
-import eng "path/to/engine"
+import eng  "engine"
+import rend "renderer"
 
 main :: proc() {
     if !eng.Init() do return
     defer eng.Shutdown()
+
+    // Renderer is user-owned — you create it, you destroy it
+    r: rend.Renderer
+    if !rend.Renderer_Init(&r) do return
+    defer rend.Renderer_Shutdown(&r)
 
     // Create a camera 10 units back from the origin, with a 75° FOV
     cam := eng.Camera_Create({0, 5, 10}, 75)
@@ -76,8 +85,8 @@ main :: proc() {
     eng.Input_Set_Cursor_Locked(eng.Get_Input(), eng.Get_Window(), true)
 
     // A cube to prove rendering works
-    cube, _ := eng.Mesh_Create_Cube()
-    defer eng.Mesh_Destroy(&cube)
+    cube, _ := rend.Mesh_Create_Cube()
+    defer rend.Mesh_Destroy(&cube)
 
     for eng.Running() {
         eng.Begin_Frame()
@@ -90,9 +99,9 @@ main :: proc() {
         eng.Camera_FPS_Update(&cam, eng.Get_Input(), dt)
 
         // Render
-        eng.Renderer_Begin(eng.Get_Renderer(), &cam, eng.Get_Window().aspect)
-        eng.Renderer_Draw_Mesh(eng.Get_Renderer(), &cube, eng.MAT4_IDENTITY, {0.4, 0.7, 1.0})
-        eng.Renderer_End(eng.Get_Renderer())
+        rend.Renderer_Begin(&r, &cam, eng.Get_Window().aspect)
+        rend.Renderer_Draw_Mesh(&r, &cube, eng.MAT4_IDENTITY, {0.4, 0.7, 1.0})
+        rend.Renderer_End(&r)
 
         eng.End_Frame()
     }
@@ -106,27 +115,34 @@ Build and run it. You should get a blue cube lit by a fake sun. If you get a bla
 ## The Game Loop
 
 ```
-Init()
+eng.Init()
   └── Window_Create()    — GLFW + OpenGL context
-  └── Renderer_Init()    — Compile default shader
 
-for Running() {
-    Begin_Frame()
+rend.Renderer_Init(&r)   — Compile default shader (call once after eng.Init)
+
+for eng.Running() {
+    eng.Begin_Frame()
       └── Poll events
       └── Update input state
       └── Compute delta time
 
     [your update code]
-    [your render code — Renderer_Begin / Draw / Renderer_End]
 
-    End_Frame()
+    rend.Renderer_Begin(&r, &cam, aspect)
+    [your draw calls — rend.Renderer_Draw_Mesh / Renderer_Draw_Transform]
+    rend.Renderer_End(&r)
+
+    eng.End_Frame()
       └── Swap buffers
 }
 
-Shutdown()
+eng.Shutdown()
+rend.Renderer_Shutdown(&r)   — free GPU resources
 ```
 
 **`Get_Delta_Time()`** returns seconds since the last frame as `f32`. Multiply everything by it. If you don't, your game will run at wildly different speeds on different machines and you will deserve the bug reports.
+
+**`Get_FPS()`** returns a smoothed frame rate (exponential moving average). Good for an on-screen counter. Don't use it to drive game logic.
 
 Delta time is clamped at `1/15` seconds (~66ms). If your frame takes longer than that, physics and movement will just slow down rather than making objects teleport. You're welcome.
 
@@ -277,15 +293,28 @@ cam := eng.Camera_Create({0, 5, 10}, 75)
 eng.Camera_FPS_Update(&cam, eng.Get_Input(), dt)
 
 // Custom parameters if defaults aren't exciting enough
+// Defaults: moveSpeed=10, mouseSensitivity=0.002, sprintMult=3.0
 params := eng.CameraFPSParams{
     moveSpeed        = 20,
-    mouseSensitivity = 0.0015,
-    sprintMult       = 4.0,    // Shift to sprint
+    mouseSensitivity = 0.001,
+    sprintMult       = 5.0,    // Shift to sprint
 }
 eng.Camera_FPS_Update(&cam, eng.Get_Input(), dt, params)
 ```
 
 **Movement keys (default):** `W/A/S/D` — forward/left/back/right, `E/Q` — up/down, `Left Shift` — sprint.
+
+### Direction Vectors
+
+```odin
+// The direction the camera is currently facing (normalised)
+forward := eng.Camera_Get_Forward(&cam)
+
+// The local right vector (normalised, perpendicular to forward and world up)
+right := eng.Camera_Get_Right(&cam)
+```
+
+Useful for building your own movement logic, raycasts, or projecting input onto camera space.
 
 ### Manual Control
 
@@ -293,7 +322,9 @@ eng.Camera_FPS_Update(&cam, eng.Get_Input(), dt, params)
 // Move by an absolute world-space offset
 eng.Camera_Move(&cam, {0, 0, -speed * dt})
 
-// Move along local axes (forward/right/up scalars)
+// Move along the camera's local axes (forward, right, up scalars).
+// Forward/backward follows the full 3D aim direction (including pitch).
+// Up/down follows the camera's local up, so it tilts with pitch.
 eng.Camera_Move_Local(&cam, fwd * speed * dt, 0, 0)
 
 // Rotate by yaw and pitch deltas in radians
@@ -319,7 +350,7 @@ The **far plane** defaults to `3500` units — safely beyond the 3000-metre worl
 
 ## Mesh
 
-File: `engine/mesh.odin`
+File: `renderer/mesh.odin` — `package renderer`
 
 ### Vertex Layout
 
@@ -334,15 +365,15 @@ Vertex (32 bytes)
 
 ```odin
 // From raw geometry data
-mesh, ok := eng.Mesh_Create(vertices, indices)
+mesh, ok := rend.Mesh_Create(vertices, indices)
 
 // Built-in primitives
-cube,  ok := eng.Mesh_Create_Cube()
-plane, ok := eng.Mesh_Create_Plane(width=100, depth=100, subdivisionsX=10, subdivisionsZ=10)
-quad,  ok := eng.Mesh_Create_Quad(width=1, height=1)
+cube,  ok := rend.Mesh_Create_Cube()
+plane, ok := rend.Mesh_Create_Plane(width=100, depth=100, subdivisionsX=10, subdivisionsZ=10)
+quad,  ok := rend.Mesh_Create_Quad(width=1, height=1)
 
 // Always destroy what you create
-defer eng.Mesh_Destroy(&mesh)
+defer rend.Mesh_Destroy(&mesh)
 ```
 
 CPU-side vertex data is **not retained** after upload. The GPU has a copy; you don't. If you need to modify geometry, keep your own `[]Vertex` slice.
@@ -351,31 +382,31 @@ CPU-side vertex data is **not retained** after upload. The GPU has a copy; you d
 
 ```odin
 // Usually called from within Renderer_Draw_Mesh, not directly
-eng.Mesh_Draw(&mesh)
+rend.Mesh_Draw(&mesh)
 ```
 
 ---
 
 ## Shader
 
-File: `engine/shader.odin`
+File: `renderer/shader.odin` — `package renderer`
 
 The renderer uses a built-in Blinn-Phong shader — you don't need to touch this for basic rendering. When you're ready to write your own:
 
 ```odin
 // From source strings
-shader, ok := eng.Shader_Create(vertSrc, fragSrc)
+shader, ok := rend.Shader_Create(vertSrc, fragSrc)
 
 // From files on disk (hot-reloading friendly)
-shader, ok := eng.Shader_Load_Files("assets/shaders/terrain.vert", "assets/shaders/terrain.frag")
+shader, ok := rend.Shader_Load_Files("assets/shaders/terrain.vert", "assets/shaders/terrain.frag")
 
-defer eng.Shader_Destroy(&shader)
+defer rend.Shader_Destroy(&shader)
 
 // Setting uniforms (shader must be bound first)
-eng.Shader_Bind(&shader)
-eng.Shader_Set_Float(&shader, "uTime",  time)
-eng.Shader_Set_Vec3(&shader,  "uColor", color)
-eng.Shader_Set_Mat4(&shader,  "uModel", &modelMat)
+rend.Shader_Bind(&shader)
+rend.Shader_Set_Float(&shader, "uTime",  time)
+rend.Shader_Set_Vec3(&shader,  "uColor", color)
+rend.Shader_Set_Mat4(&shader,  "uModel", &modelMat)
 ```
 
 ### Built-in Shader Uniforms
@@ -398,19 +429,23 @@ When using the default renderer shader (`Renderer_Draw_Mesh`), these uniforms ar
 
 ## Renderer
 
-File: `engine/renderer.odin`
+File: `renderer/renderer.odin` — `package renderer`
+
+The renderer is **user-owned** — there is no global singleton. Create one, pass it around by pointer.
 
 ```odin
-r := eng.Get_Renderer()
+r: rend.Renderer
+rend.Renderer_Init(&r)
+defer rend.Renderer_Shutdown(&r)
 
 // Every frame:
-eng.Renderer_Begin(r, &cam, eng.Get_Window().aspect)
+rend.Renderer_Begin(&r, &cam, eng.Get_Window().aspect)
 
     // Draw as many meshes as you want in here
-    eng.Renderer_Draw_Mesh(r, &mesh, modelMatrix, color)
-    eng.Renderer_Draw_Transform(r, &mesh, transform, color)
+    rend.Renderer_Draw_Mesh(&r, &mesh, modelMatrix, color)
+    rend.Renderer_Draw_Transform(&r, &mesh, transform, color)
 
-eng.Renderer_End(r)
+rend.Renderer_End(&r)
 ```
 
 ### Lighting
@@ -418,26 +453,28 @@ eng.Renderer_End(r)
 The renderer has one directional light (a sun). Change it like this:
 
 ```odin
-eng.Renderer_Set_Light(eng.Get_Renderer(), eng.DirLight{
+rend.Renderer_Set_Light(&r, rend.DirLight{
     direction = {-1, -2, -1},      // pointing down-left-forward
     color     = {1.0, 0.9, 0.8},   // warm afternoon sun
     ambient   = {0.05, 0.05, 0.1}, // dim blue sky fill
 })
 ```
 
+Default light is `{-0.5, -1.0, -0.3}` direction, near-white color, dim blue-grey ambient.
+
 ### Custom Shaders
 
 ```odin
 // Switch to your shader for some draw calls, then switch back
-eng.Renderer_Use_Shader(r, &myShader)
+rend.Renderer_Use_Shader(&r, &myShader)
 // ... upload uniforms, draw things ...
-eng.Renderer_Use_Default_Shader(r)
+rend.Renderer_Use_Default_Shader(&r)
 ```
 
 ### Clear Colour
 
 ```odin
-eng.Renderer_Set_Clear_Color(r, {0.53, 0.81, 0.98, 1.0}) // sky blue
+rend.Renderer_Set_Clear_Color(&r, {0.53, 0.81, 0.98, 1.0}) // sky blue
 ```
 
 ---
