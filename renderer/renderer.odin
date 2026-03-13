@@ -21,6 +21,20 @@ DEFAULT_LIGHT :: DirLight{
 }
 
 // =============================================================================
+// Per-frame UBO data (std140 layout — Vec3s padded to Vec4)
+// =============================================================================
+
+@(private)
+_FrameUniforms :: struct #align(16) {
+	view:       eng.Mat4,   // 64 bytes
+	projection: eng.Mat4,   // 64 bytes
+	viewPos:    eng.Vec4,   // 16 bytes (padded from Vec3)
+	lightDir:   eng.Vec4,   // 16 bytes (padded from Vec3)
+	lightColor: eng.Vec4,   // 16 bytes (padded from Vec3)
+	ambient:    eng.Vec4,   // 16 bytes (padded from Vec3)
+}
+
+// =============================================================================
 // Renderer
 // =============================================================================
 
@@ -33,6 +47,8 @@ Renderer :: struct {
 	viewMat:  eng.Mat4,
 	projMat:  eng.Mat4,
 	viewPos:  eng.Vec3,
+
+	frameUBO: u32, // GL buffer handle for per-frame uniform block
 
 	// Debug overlays
 	grid:      Grid,
@@ -49,6 +65,19 @@ Renderer_Init :: proc(renderer: ^Renderer) -> bool {
 	renderer.clearColor    = {0.1, 0.1, 0.15, 1.0}
 	renderer.light         = DEFAULT_LIGHT
 
+	// Create per-frame UBO at binding point 0.
+	gl.GenBuffers(1, &renderer.frameUBO)
+	gl.BindBuffer(gl.UNIFORM_BUFFER, renderer.frameUBO)
+	gl.BufferData(gl.UNIFORM_BUFFER, size_of(_FrameUniforms), nil, gl.DYNAMIC_DRAW)
+	gl.BindBufferBase(gl.UNIFORM_BUFFER, 0, renderer.frameUBO)
+	gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
+
+	// Bind the default shader's uniform block to binding point 0.
+	blockIdx := gl.GetUniformBlockIndex(renderer.defaultShader.id, "FrameUniforms")
+	if blockIdx != gl.INVALID_INDEX {
+		gl.UniformBlockBinding(renderer.defaultShader.id, blockIdx, 0)
+	}
+
 	cfg := eng.Get_Config()
 	if cfg.debug.showGrid {
 		renderer.gridReady = Grid_Init(&renderer.grid)
@@ -62,6 +91,7 @@ Renderer_Init :: proc(renderer: ^Renderer) -> bool {
 
 Renderer_Shutdown :: proc(renderer: ^Renderer) {
 	if renderer.gridReady do Grid_Destroy(&renderer.grid)
+	gl.DeleteBuffers(1, &renderer.frameUBO)
 	Shader_Destroy(&renderer.defaultShader)
 }
 
@@ -80,12 +110,18 @@ Renderer_Begin :: proc(renderer: ^Renderer, cam: ^eng.Camera, aspect: f32) {
 	gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
 
 	Shader_Bind(&renderer.defaultShader)
-	Shader_Set_Mat4(&renderer.defaultShader, "uView",       &renderer.viewMat)
-	Shader_Set_Mat4(&renderer.defaultShader, "uProjection", &renderer.projMat)
-	Shader_Set_Vec3(&renderer.defaultShader, "uViewPos",    renderer.viewPos)
-	Shader_Set_Vec3(&renderer.defaultShader, "uLightDir",   renderer.light.direction)
-	Shader_Set_Vec3(&renderer.defaultShader, "uLightColor", renderer.light.color)
-	Shader_Set_Vec3(&renderer.defaultShader, "uAmbient",    renderer.light.ambient)
+
+	frameData := _FrameUniforms{
+		view       = renderer.viewMat,
+		projection = renderer.projMat,
+		viewPos    = {renderer.viewPos.x, renderer.viewPos.y, renderer.viewPos.z, 0},
+		lightDir   = {renderer.light.direction.x, renderer.light.direction.y, renderer.light.direction.z, 0},
+		lightColor = {renderer.light.color.x, renderer.light.color.y, renderer.light.color.z, 0},
+		ambient    = {renderer.light.ambient.x, renderer.light.ambient.y, renderer.light.ambient.z, 0},
+	}
+	gl.BindBuffer(gl.UNIFORM_BUFFER, renderer.frameUBO)
+	gl.BufferSubData(gl.UNIFORM_BUFFER, 0, size_of(_FrameUniforms), &frameData)
+	gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
 }
 
 // Call at the end of each frame.
@@ -105,7 +141,7 @@ Renderer_Draw_Grid :: proc(renderer: ^Renderer) {
 	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
 	gl.Disable(gl.CULL_FACE)
 
-	Grid_Draw(&renderer.grid, renderer.viewMat, renderer.projMat, renderer.viewPos, cfg.debug)
+	Grid_Draw(&renderer.grid, renderer.viewPos, cfg.debug)
 
 	gl.Disable(gl.BLEND)
 	gl.Enable(gl.CULL_FACE)
@@ -154,9 +190,16 @@ layout(location = 0) in vec3 aPos;
 layout(location = 1) in vec3 aNormal;
 layout(location = 2) in vec2 aUV;
 
+layout(std140) uniform FrameUniforms {
+    mat4 uView;
+    mat4 uProjection;
+    vec4 uViewPos;
+    vec4 uLightDir;
+    vec4 uLightColor;
+    vec4 uAmbient;
+};
+
 uniform mat4 uModel;
-uniform mat4 uView;
-uniform mat4 uProjection;
 uniform mat4 uNormalMatrix;
 
 out vec3 vFragPos;
@@ -179,27 +222,32 @@ in vec3 vFragPos;
 in vec3 vNormal;
 in vec2 vUV;
 
+layout(std140) uniform FrameUniforms {
+    mat4 uView;
+    mat4 uProjection;
+    vec4 uViewPos;
+    vec4 uLightDir;
+    vec4 uLightColor;
+    vec4 uAmbient;
+};
+
 uniform vec3 uColor;
-uniform vec3 uLightDir;
-uniform vec3 uLightColor;
-uniform vec3 uAmbient;
-uniform vec3 uViewPos;
 
 out vec4 fragColor;
 
 void main() {
     vec3 normal   = normalize(vNormal);
-    vec3 lightDir = normalize(-uLightDir);
+    vec3 lightDir = normalize(-uLightDir.xyz);
 
     float diff    = max(dot(normal, lightDir), 0.0);
-    vec3  diffuse = diff * uLightColor;
+    vec3  diffuse = diff * uLightColor.xyz;
 
-    vec3  viewDir  = normalize(uViewPos - vFragPos);
+    vec3  viewDir  = normalize(uViewPos.xyz - vFragPos);
     vec3  halfDir  = normalize(lightDir + viewDir);
     float spec     = pow(max(dot(normal, halfDir), 0.0), 32.0);
-    vec3  specular = spec * uLightColor * 0.3;
+    vec3  specular = spec * uLightColor.xyz * 0.3;
 
-    vec3 result = (uAmbient + diffuse + specular) * uColor;
+    vec3 result = (uAmbient.xyz + diffuse + specular) * uColor;
     fragColor   = vec4(result, 1.0);
 }
 `

@@ -23,7 +23,7 @@ DEFAULT_WINDOW_CONFIG :: WindowConfig{
 	title    = "3D Engine",
 	width    = 1280,
 	height   = 720,
-	vsync    = true,
+	vsync    = false,
 	msaa     = 4,
 	glMajor  = 4,
 	glMinor  = 1,

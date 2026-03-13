@@ -94,7 +94,6 @@ Mesh_Draw :: proc(mesh: ^Mesh) {
 	} else {
 		gl.DrawArrays(gl.TRIANGLES, 0, mesh.vertexCount)
 	}
-	gl.BindVertexArray(0)
 }
 
 // =============================================================================

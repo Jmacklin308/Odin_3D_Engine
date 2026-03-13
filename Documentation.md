@@ -33,9 +33,10 @@ engine/    (package engine)
 └── camera.odin    — FPS-style camera with lazy matrix caching
 
 renderer/  (package renderer)
-├── renderer.odin  — Blinn-Phong renderer, draw calls, lighting
+├── renderer.odin  — Blinn-Phong renderer, draw calls, lighting, per-frame UBO
 ├── mesh.odin      — GPU mesh upload, draw calls, built-in primitives
-└── shader.odin    — GLSL shader compilation, uniform setters
+├── shader.odin    — GLSL shader compilation, cached uniform locations
+└── grid.odin      — Infinite-look debug grid (analytical, screen-space derivatives)
 ```
 
 Two packages. Both are imported separately. The renderer depends on the engine for math types and camera, but the engine knows nothing about the renderer — keeping the dependency one-directional.
@@ -411,19 +412,26 @@ rend.Shader_Set_Mat4(&shader,  "uModel", &modelMat)
 
 ### Built-in Shader Uniforms
 
-When using the default renderer shader (`Renderer_Draw_Mesh`), these uniforms are set automatically:
+When using the default renderer shader (`Renderer_Draw_Mesh`), these values are set automatically:
 
-| Uniform         | Type   | Set by            |
-|-----------------|--------|-------------------|
-| `uModel`        | mat4   | per draw call     |
-| `uNormalMatrix` | mat4   | per draw call     |
-| `uView`         | mat4   | `Renderer_Begin`  |
-| `uProjection`   | mat4   | `Renderer_Begin`  |
-| `uViewPos`      | vec3   | `Renderer_Begin`  |
-| `uLightDir`     | vec3   | `Renderer_Begin`  |
-| `uLightColor`   | vec3   | `Renderer_Begin`  |
-| `uAmbient`      | vec3   | `Renderer_Begin`  |
-| `uColor`        | vec3   | per draw call     |
+**Per-draw-call uniforms:**
+
+| Uniform         | Type   | Set by                    |
+|-----------------|--------|---------------------------|
+| `uModel`        | mat4   | `Renderer_Draw_Mesh`      |
+| `uNormalMatrix` | mat4   | `Renderer_Draw_Mesh`      |
+| `uColor`        | vec3   | `Renderer_Draw_Mesh`      |
+
+**Per-frame UBO (binding point 0, uploaded once in `Renderer_Begin`):**
+
+| Field           | GLSL type | Notes                         |
+|-----------------|-----------|-------------------------------|
+| `uView`         | mat4      |                               |
+| `uProjection`   | mat4      |                               |
+| `uViewPos`      | vec4      | `.xyz` = camera world position |
+| `uLightDir`     | vec4      | `.xyz` = direction to light   |
+| `uLightColor`   | vec4      | `.xyz` = RGB color            |
+| `uAmbient`      | vec4      | `.xyz` = ambient RGB          |
 
 ---
 
@@ -447,6 +455,25 @@ rend.Renderer_Begin(&r, &cam, eng.Get_Window().aspect)
 
 rend.Renderer_End(&r)
 ```
+
+### Lighting
+
+### Per-Frame UBO
+
+View, projection, and all lighting data are uploaded once per frame into a single OpenGL Uniform Buffer Object (UBO) at binding point `0`. Both the default mesh shader and the grid shader share this buffer — adding new shaders should declare the same block:
+
+```glsl
+layout(std140) uniform FrameUniforms {
+    mat4 uView;
+    mat4 uProjection;
+    vec4 uViewPos;
+    vec4 uLightDir;
+    vec4 uLightColor;
+    vec4 uAmbient;
+};
+```
+
+Vec3 values are padded to `vec4` per std140 rules — use `.xyz` to extract them in shader code.
 
 ### Lighting
 
@@ -515,6 +542,8 @@ chunkEntities: #soa [dynamic]Entity
 - **Camera matrix caching.** The view matrix is only rebuilt when the camera moves. `Camera_Get_View` is cheap to call repeatedly.
 - **Delta time clamping.** Breakpoints and lag spikes won't send your entities into low orbit.
 - **`Vec3_Length_Sq`** — use this instead of `Vec3_Length` when you only need to compare distances. It skips a `sqrt`.
+- **Uniform location caching.** `Shader_Set_*` caches the result of `glGetUniformLocation` on first call. Subsequent frames hit a map lookup instead of a driver string query.
+- **Per-frame UBO.** View, projection, and lighting data are uploaded once per frame into a shared UBO rather than as individual uniforms. All shaders share binding point `0`.
 
 ### What You Should Do
 
@@ -525,7 +554,6 @@ chunkEntities: #soa [dynamic]Entity
 
 ### What You Definitely Shouldn't Do
 
-- Call `gl.GetUniformLocation` every draw call for the same uniform. Cache the location.
 - Allocate from the heap inside the game loop. Use arena allocators for per-frame temporary data.
 - Set `nearPlane` to `0.001`. You'll destroy your depth buffer precision. Keep it at `0.1` or higher.
 

@@ -41,6 +41,13 @@ main :: proc() {
 
 	for eng.Running() {
 		eng.Begin_Frame()
+		
+		
+		fps := eng.Get_FPS()
+		title := fmt.ctprintf("3D Engine | FPS: %.0f | %.2f ms", fps, 1000.0 / fps)
+		eng.Window_Set_Title(eng.Get_Window(), title)
+		
+		
 		dt  := eng.Get_Delta_Time()
 		inp := eng.Get_Input()
 		win := eng.Get_Window()

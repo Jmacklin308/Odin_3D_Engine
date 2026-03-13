@@ -10,7 +10,8 @@ import "core:os"
 // =============================================================================
 
 Shader :: struct {
-	id: u32, // OpenGL program handle. 0 = invalid / not compiled.
+	id:       u32,            // OpenGL program handle. 0 = invalid / not compiled.
+	uniforms: map[cstring]i32, // Cached uniform locations.
 }
 
 // Compile a shader program from GLSL source strings.
@@ -44,7 +45,9 @@ Shader_Create :: proc(vertSrc, fragSrc: string) -> (shader: Shader, ok: bool) {
 		return {}, false
 	}
 
-	return Shader{id = progId}, true
+	shader.id       = progId
+	shader.uniforms = make(map[cstring]i32)
+	return shader, true
 }
 
 // Load GLSL source from files on disk and compile.
@@ -68,6 +71,7 @@ Shader_Load_Files :: proc(vertPath, fragPath: string) -> (shader: Shader, ok: bo
 
 Shader_Destroy :: proc(shader: ^Shader) {
 	if shader.id != 0 {
+		delete(shader.uniforms)
 		gl.DeleteProgram(shader.id)
 		shader.id = 0
 	}
@@ -86,38 +90,46 @@ Shader_Unbind :: proc() {
 // =============================================================================
 
 Shader_Set_Int :: proc(shader: ^Shader, name: cstring, val: i32) {
-	loc := gl.GetUniformLocation(shader.id, name)
+	loc := _shader_get_loc(shader, name)
 	gl.Uniform1i(loc, val)
 }
 
 Shader_Set_Float :: proc(shader: ^Shader, name: cstring, val: f32) {
-	loc := gl.GetUniformLocation(shader.id, name)
+	loc := _shader_get_loc(shader, name)
 	gl.Uniform1f(loc, val)
 }
 
 Shader_Set_Vec2 :: proc(shader: ^Shader, name: cstring, val: [2]f32) {
-	loc := gl.GetUniformLocation(shader.id, name)
+	loc := _shader_get_loc(shader, name)
 	gl.Uniform2f(loc, val.x, val.y)
 }
 
 Shader_Set_Vec3 :: proc(shader: ^Shader, name: cstring, val: [3]f32) {
-	loc := gl.GetUniformLocation(shader.id, name)
+	loc := _shader_get_loc(shader, name)
 	gl.Uniform3f(loc, val.x, val.y, val.z)
 }
 
 Shader_Set_Vec4 :: proc(shader: ^Shader, name: cstring, val: [4]f32) {
-	loc := gl.GetUniformLocation(shader.id, name)
+	loc := _shader_get_loc(shader, name)
 	gl.Uniform4f(loc, val.x, val.y, val.z, val.w)
 }
 
 Shader_Set_Mat4 :: proc(shader: ^Shader, name: cstring, val: ^matrix[4, 4]f32) {
-	loc := gl.GetUniformLocation(shader.id, name)
+	loc := _shader_get_loc(shader, name)
 	gl.UniformMatrix4fv(loc, 1, gl.FALSE, &val[0, 0])
 }
 
 // =============================================================================
 // Internal
 // =============================================================================
+
+@(private)
+_shader_get_loc :: proc(shader: ^Shader, name: cstring) -> i32 {
+	if loc, ok := shader.uniforms[name]; ok do return loc
+	loc := gl.GetUniformLocation(shader.id, name)
+	shader.uniforms[name] = loc
+	return loc
+}
 
 @(private)
 _compile_stage :: proc(stageType: u32, src: string) -> (id: u32, ok: bool) {

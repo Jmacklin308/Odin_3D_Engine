@@ -27,6 +27,12 @@ Grid_Init :: proc(grid: ^Grid) -> bool {
 	}
 	grid.shader = shader
 
+	// Bind the grid shader's uniform block to binding point 0.
+	blockIdx := gl.GetUniformBlockIndex(grid.shader.id, "FrameUniforms")
+	if blockIdx != gl.INVALID_INDEX {
+		gl.UniformBlockBinding(grid.shader.id, blockIdx, 0)
+	}
+
 	// A unit XZ quad (Y = 0). Scaled by uHalfExtent in the vertex shader.
 	// Triangle-strip order: TL, TR, BL, BR → two triangles, no index buffer.
 	positions := [4][3]f32{
@@ -46,20 +52,13 @@ Grid_Init :: proc(grid: ^Grid) -> bool {
 	gl.VertexAttribPointer(0, 3, gl.FLOAT, gl.FALSE, 12, 0)
 	gl.EnableVertexAttribArray(0)
 
-	gl.BindVertexArray(0)
-
 	fmt.println("[Grid] Initialised.")
 	return true
 }
 
-Grid_Draw :: proc(grid: ^Grid, view: eng.Mat4, proj: eng.Mat4, cameraPos: eng.Vec3, cfg: eng.DebugConfig) {
+Grid_Draw :: proc(grid: ^Grid, cameraPos: eng.Vec3, cfg: eng.DebugConfig) {
 	Shader_Bind(&grid.shader)
 
-	// Shader_Set_Mat4 takes a pointer — copy to locals first.
-	viewCopy := view
-	projCopy := proj
-	Shader_Set_Mat4  (&grid.shader, "uView",       &viewCopy)
-	Shader_Set_Mat4  (&grid.shader, "uProjection", &projCopy)
 	Shader_Set_Float (&grid.shader, "uHalfExtent", cfg.gridHalfExtent)
 	Shader_Set_Vec3  (&grid.shader, "uCameraPos",  cameraPos)
 	Shader_Set_Vec4  (&grid.shader, "uGridColor",  cfg.gridColor)
@@ -68,7 +67,6 @@ Grid_Draw :: proc(grid: ^Grid, view: eng.Mat4, proj: eng.Mat4, cameraPos: eng.Ve
 
 	gl.BindVertexArray(grid.vao)
 	gl.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
-	gl.BindVertexArray(0)
 
 	Shader_Unbind()
 }
@@ -89,8 +87,15 @@ _GRID_VERT_SRC :: `#version 410 core
 
 layout(location = 0) in vec3 aPos;
 
-uniform mat4  uView;
-uniform mat4  uProjection;
+layout(std140) uniform FrameUniforms {
+    mat4 uView;
+    mat4 uProjection;
+    vec4 uViewPos;
+    vec4 uLightDir;
+    vec4 uLightColor;
+    vec4 uAmbient;
+};
+
 uniform float uHalfExtent;
 uniform vec3  uCameraPos;
 
