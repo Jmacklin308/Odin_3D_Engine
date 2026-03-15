@@ -7,7 +7,7 @@ import "vendor:glfw"
 // Key and button codes are just GLFW constants re-exported for convenience.
 // =============================================================================
 
-// Keys — a selection of the most used ones. Full list: vendor/glfw/glfw3.h
+// Keys - a selection of the most used ones. Full list: vendor/glfw/glfw3.h
 KEY_UNKNOWN :: glfw.KEY_UNKNOWN
 KEY_SPACE   :: glfw.KEY_SPACE
 KEY_ESCAPE  :: glfw.KEY_ESCAPE
@@ -67,7 +67,7 @@ MOUSE_LEFT   :: glfw.MOUSE_BUTTON_LEFT
 MOUSE_RIGHT  :: glfw.MOUSE_BUTTON_RIGHT
 MOUSE_MIDDLE :: glfw.MOUSE_BUTTON_MIDDLE
 
-// Internal array sizes — large enough for all GLFW key/button codes.
+// Internal array sizes - large enough for all GLFW key/button codes.
 @(private) KEY_COUNT   :: 512
 @(private) MOUSE_COUNT :: 8
 
@@ -78,7 +78,7 @@ MOUSE_MIDDLE :: glfw.MOUSE_BUTTON_MIDDLE
 // =============================================================================
 
 Input :: struct {
-	// Keyboard state — indexed by GLFW key code
+	// Keyboard state - indexed by GLFW key code
 	keys:     [KEY_COUNT]bool,
 	prevKeys: [KEY_COUNT]bool,
 
@@ -87,14 +87,14 @@ Input :: struct {
 	prevMousePos: Vec2,
 	mouseDelta:   Vec2, // How far the cursor moved this frame
 
-	// Mouse button state — indexed by GLFW mouse button code
+	// Mouse button state - indexed by GLFW mouse button code
 	mouseButtons:     [MOUSE_COUNT]bool,
 	prevMouseButtons: [MOUSE_COUNT]bool,
 
 	scrollDelta: Vec2, // Scroll wheel: x = horizontal, y = vertical
 
 	// When true the cursor is hidden and confined to the window.
-	// Mouse delta still works — use it for FPS camera rotation.
+	// Mouse delta still works - use it for FPS camera rotation.
 	cursorLocked: bool,
 
 	// Internal flag to discard the first delta after cursor lock is toggled.
@@ -102,16 +102,12 @@ Input :: struct {
 	firstMouseFrame: bool,
 }
 
-// =============================================================================
-// Input Update — call once per frame before reading any input state
-// =============================================================================
-
 // Polls GLFW for current input state and computes per-frame deltas.
 Input_Update :: proc(input: ^Input, win: ^Window) {
-	// Shift current → previous
-	input.prevKeys        = input.keys
+	// Shift current -> previous
+	input.prevKeys         = input.keys
 	input.prevMouseButtons = input.mouseButtons
-	input.prevMousePos    = input.mousePos
+	input.prevMousePos     = input.mousePos
 
 	// Poll keyboard
 	for key in 0..<KEY_COUNT {
@@ -129,7 +125,7 @@ Input_Update :: proc(input: ^Input, win: ^Window) {
 
 	if input.firstMouseFrame {
 		// First frame after locking: swallow the delta to prevent the camera snap
-		input.prevMousePos  = input.mousePos
+		input.prevMousePos   = input.mousePos
 		input.firstMouseFrame = false
 	}
 
@@ -156,14 +152,10 @@ _scroll_callback :: proc "c" (window: glfw.WindowHandle, xOffset, yOffset: f64) 
 	input.scrollDelta.y += f32(yOffset)
 }
 
-// Clear scroll delta — call at the start of each frame before Input_Update.
+// Clear scroll delta - call at the start of each frame before Input_Update.
 Input_Clear_Frame :: proc(input: ^Input) {
 	input.scrollDelta = {}
 }
-
-// =============================================================================
-// Keyboard Queries
-// =============================================================================
 
 // True every frame while the key is held down.
 Input_Key_Down :: proc(input: ^Input, key: i32) -> bool {
@@ -182,10 +174,6 @@ Input_Key_Released :: proc(input: ^Input, key: i32) -> bool {
 	if key < 0 || int(key) >= KEY_COUNT do return false
 	return !input.keys[key] && input.prevKeys[key]
 }
-
-// =============================================================================
-// Mouse Queries
-// =============================================================================
 
 // True every frame while the mouse button is held down.
 Input_Mouse_Down :: proc(input: ^Input, button: i32) -> bool {
@@ -214,10 +202,6 @@ Input_Mouse_Delta :: proc(input: ^Input) -> Vec2 {
 Input_Scroll_Delta :: proc(input: ^Input) -> Vec2 {
 	return input.scrollDelta
 }
-
-// =============================================================================
-// Cursor Control
-// =============================================================================
 
 // Lock or unlock the cursor. Locked = hidden + confined, great for FPS cameras.
 Input_Set_Cursor_Locked :: proc(input: ^Input, win: ^Window, locked: bool) {

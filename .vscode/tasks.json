@@ -4,7 +4,7 @@
         {
             "label": "Build",
             "type": "shell",
-            "command": "odin build . -out:3D_Engine.exe -debug",
+            "command": "odin build . -out:Odin_3D_Engine.exe -debug",
             "group": {
                 "kind": "build",
                 "isDefault": true
@@ -29,7 +29,7 @@
         {
             "label": "Run",
             "type": "shell",
-            "command": "odin run . -out:3D_Engine.exe",
+            "command": "odin run . -out:Odin_3D_Engine.exe",
             "group": {
                 "kind": "test",
                 "isDefault": true

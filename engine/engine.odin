@@ -57,10 +57,6 @@ _EngineState :: struct {
 	smoothFps:     f32,
 }
 
-// =============================================================================
-// Lifecycle
-// =============================================================================
-
 // Initialise the engine. Call once before your game loop.
 Init :: proc(cfg: EngineConfig = DEFAULT_CONFIG) -> bool {
 	win, winOk := Window_Create(cfg.window)
@@ -94,10 +90,7 @@ Quit :: proc() {
 	_eng.running = false
 }
 
-// =============================================================================
-// Frame Management
-// =============================================================================
-
+// Updates input, window state, and frame timing for the next simulation tick.
 Begin_Frame :: proc() {
 	Input_Clear_Frame(&_eng.input)
 	Window_Poll_Events()
@@ -119,30 +112,32 @@ Begin_Frame :: proc() {
 	}
 }
 
+// Presents the finished frame to the window.
 End_Frame :: proc() {
 	Window_Swap_Buffers(&_eng.window)
 }
 
-// =============================================================================
-// Accessors
-// =============================================================================
-
+// Returns the engine-owned window.
 Get_Window :: proc() -> ^Window {
 	return &_eng.window
 }
 
+// Returns the engine-owned input state.
 Get_Input :: proc() -> ^Input {
 	return &_eng.input
 }
 
+// Returns the clamped delta time in seconds for the current frame.
 Get_Delta_Time :: proc() -> f32 {
 	return _eng.deltaTime
 }
 
+// Returns the smoothed frames-per-second estimate.
 Get_FPS :: proc() -> f32 {
 	return _eng.smoothFps
 }
 
+// Returns the active engine configuration.
 Get_Config :: proc() -> EngineConfig {
 	return _eng.config
 }

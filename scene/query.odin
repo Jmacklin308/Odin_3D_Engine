@@ -5,18 +5,13 @@ package scene
 // Returns a slice of entity slot indices matching a ComponentMask.
 // Uses the temp allocator by default — no manual free required when
 // context.temp_allocator is reset at the end of each frame.
-//
-// Usage:
-//   q := scene.World_Query(world, scene.COMP_TRANSFORM | scene.COMP_VELOCITY)
-//   for idx in q.indices {
-//       world.transforms[idx].position += world.velocities[idx] * dt
-//   }
 // =============================================================================
 
 WorldQuery :: struct {
 	indices: [dynamic]u32,
 }
 
+// Returns the live entity slots whose component mask contains all requested bits.
 World_Query :: proc(
 	world:     ^World,
 	mask:      ComponentMask,

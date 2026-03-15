@@ -19,6 +19,7 @@ Grid :: struct {
 	vbo:    u32,
 }
 
+// Creates the debug grid shader and geometry.
 Grid_Init :: proc(grid: ^Grid) -> bool {
 	shader, ok := Shader_Create(_GRID_VERT_SRC, _GRID_FRAG_SRC)
 	if !ok {
@@ -56,6 +57,7 @@ Grid_Init :: proc(grid: ^Grid) -> bool {
 	return true
 }
 
+// Draws the debug grid using the current frame uniforms.
 Grid_Draw :: proc(grid: ^Grid, cameraPos: eng.Vec3, cfg: eng.DebugConfig) {
 	Shader_Bind(&grid.shader)
 
@@ -71,6 +73,7 @@ Grid_Draw :: proc(grid: ^Grid, cameraPos: eng.Vec3, cfg: eng.DebugConfig) {
 	Shader_Unbind()
 }
 
+// Destroys the debug grid shader and buffers.
 Grid_Destroy :: proc(grid: ^Grid) {
 	if grid.vbo != 0 do gl.DeleteBuffers(1, &grid.vbo)
 	if grid.vao != 0 do gl.DeleteVertexArrays(1, &grid.vao)

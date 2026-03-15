@@ -46,38 +46,37 @@ MAT4_IDENTITY :: Mat4{
 
 QUAT_IDENTITY :: Quat(1)
 
-// =============================================================================
-// Vec2 Operations
-// =============================================================================
-
+// Returns the length of the vector.
 Vec2_Length :: proc(v: Vec2) -> f32 {
 	return linalg.length(v)
 }
 
+// Returns a normalized copy of the vector.
 Vec2_Normalize :: proc(v: Vec2) -> Vec2 {
 	return linalg.normalize(v)
 }
 
+// Returns the dot product of two vectors.
 Vec2_Dot :: proc(a, b: Vec2) -> f32 {
 	return linalg.dot(a, b)
 }
 
-// =============================================================================
-// Vec3 Operations
-// =============================================================================
-
+// Returns a normalized copy of the vector.
 Vec3_Normalize :: proc(v: Vec3) -> Vec3 {
 	return linalg.normalize(v)
 }
 
+// Returns the dot product of two vectors.
 Vec3_Dot :: proc(a, b: Vec3) -> f32 {
 	return linalg.dot(a, b)
 }
 
+// Returns the cross product of two vectors.
 Vec3_Cross :: proc(a, b: Vec3) -> Vec3 {
 	return linalg.cross(a, b)
 }
 
+// Returns the length of the vector.
 Vec3_Length :: proc(v: Vec3) -> f32 {
 	return linalg.length(v)
 }
@@ -88,21 +87,20 @@ Vec3_Length_Sq :: proc(v: Vec3) -> f32 {
 	return linalg.length2(v)
 }
 
+// Returns the distance between two points.
 Vec3_Distance :: proc(a, b: Vec3) -> f32 {
 	return linalg.length(b - a)
 }
 
+// Linearly interpolates between two vectors.
 Vec3_Lerp :: proc(a, b: Vec3, t: f32) -> Vec3 {
 	return linalg.lerp(a, b, t)
 }
 
+// Reflects a vector around a surface normal.
 Vec3_Reflect :: proc(v, normal: Vec3) -> Vec3 {
 	return linalg.reflect(v, normal)
 }
-
-// =============================================================================
-// Mat4 Operations
-// =============================================================================
 
 // Perspective projection matrix.
 // fovY is in radians. aspect = width/height. near/far are clip plane distances.
@@ -118,10 +116,12 @@ Mat4_Look_At :: proc(eye, target, up: Vec3) -> Mat4 {
 	return linalg.matrix4_look_at_f32(eye, target, up)
 }
 
+// Returns a translation matrix.
 Mat4_Translate :: proc(v: Vec3) -> Mat4 {
 	return linalg.matrix4_translate_f32(v)
 }
 
+// Returns a scale matrix.
 Mat4_Scale :: proc(v: Vec3) -> Mat4 {
 	return linalg.matrix4_scale_f32(v)
 }
@@ -131,6 +131,7 @@ Mat4_Rotate :: proc(angle: f32, axis: Vec3) -> Mat4 {
 	return linalg.matrix4_rotate_f32(angle, axis)
 }
 
+// Converts a quaternion into a rotation matrix.
 Mat4_From_Quat :: proc(q: Quat) -> Mat4 {
 	return linalg.matrix4_from_quaternion_f32(q)
 }
@@ -143,10 +144,12 @@ Mat4_TRS :: proc(pos: Vec3, rot: Quat, scl: Vec3) -> Mat4 {
 	return t * r * s
 }
 
+// Returns the inverse of the matrix.
 Mat4_Inverse :: proc(m: Mat4) -> Mat4 {
 	return linalg.inverse(m)
 }
 
+// Returns the transposed matrix.
 Mat4_Transpose :: proc(m: Mat4) -> Mat4 {
 	return linalg.transpose(m)
 }
@@ -157,10 +160,6 @@ Mat4_Transpose :: proc(m: Mat4) -> Mat4 {
 Mat4_Normal :: proc(model: Mat4) -> Mat4 {
 	return Mat4_Transpose(Mat4_Inverse(model))
 }
-
-// =============================================================================
-// Quaternion Operations
-// =============================================================================
 
 // Create a quaternion from an axis (normalized) and an angle in radians.
 Quat_Axis_Angle :: proc(axis: Vec3, angle: f32) -> Quat {
@@ -177,6 +176,7 @@ Quat_From_Euler :: proc(pitch, yaw, roll: f32) -> Quat {
 	return linalg.normalize(qYaw * qPitch * qRoll)
 }
 
+// Returns a normalized copy of the quaternion.
 Quat_Normalize :: proc(q: Quat) -> Quat {
 	return linalg.normalize(q)
 }
@@ -195,10 +195,7 @@ Quat_Rotate_Vec3 :: proc(q: Quat, v: Vec3) -> Vec3 {
 	return Vec3{r.x, r.y, r.z}
 }
 
-// =============================================================================
-// Transform Helpers
-// =============================================================================
-
+// Returns an identity transform at the origin.
 Transform_Default :: proc() -> Transform {
 	return Transform{
 		position = VEC3_ZERO,
@@ -207,18 +204,17 @@ Transform_Default :: proc() -> Transform {
 	}
 }
 
+// Builds a model matrix from a transform.
 Transform_To_Mat4 :: proc(t: Transform) -> Mat4 {
 	return Mat4_TRS(t.position, t.rotation, t.scale)
 }
 
-// =============================================================================
-// Scalar Utilities
-// =============================================================================
-
+// Converts degrees to radians.
 To_Radians :: proc(degrees: f32) -> f32 {
 	return math.to_radians(degrees)
 }
 
+// Converts radians to degrees.
 To_Degrees :: proc(radians: f32) -> f32 {
 	return math.to_degrees(radians)
 }
@@ -229,6 +225,7 @@ Smooth_Step :: proc(edge0, edge1, x: f32) -> f32 {
 	return t * t * (3 - 2 * t)
 }
 
+// Linearly interpolates between two scalar values.
 F32_Lerp :: proc(a, b, t: f32) -> f32 {
 	return a + t * (b - a)
 }

@@ -106,6 +106,7 @@ Window_Create :: proc(cfg: WindowConfig) -> (win: Window, ok: bool) {
 	return win, true
 }
 
+// Destroys the window and shuts down GLFW.
 Window_Destroy :: proc(win: ^Window) {
 	if win.handle != nil {
 		glfw.DestroyWindow(win.handle)
@@ -119,24 +120,27 @@ Window_Should_Close :: proc(win: ^Window) -> bool {
 	return bool(glfw.WindowShouldClose(win.handle))
 }
 
+// Swaps the front and back buffers for the window.
 Window_Swap_Buffers :: proc(win: ^Window) {
 	glfw.SwapBuffers(win.handle)
 }
 
+// Pumps the OS event queue for window and input events.
 Window_Poll_Events :: proc() {
 	glfw.PollEvents()
 }
 
+// Returns the cached window size in pixels.
 Window_Get_Size :: proc(win: ^Window) -> (width, height: i32) {
 	return win.width, win.height
 }
 
+// Returns the cached window aspect ratio.
 Window_Get_Aspect :: proc(win: ^Window) -> f32 {
 	return win.aspect
 }
 
-// Call this in your resize callback or at the start of each frame
-// if you support window resizing.
+// Refreshes the cached window size and updates the OpenGL viewport.
 Window_Update_Size :: proc(win: ^Window) {
 	w, h := glfw.GetWindowSize(win.handle)
 	win.width  = w
@@ -147,6 +151,7 @@ Window_Update_Size :: proc(win: ^Window) {
 	gl.Viewport(0, 0, w, h)
 }
 
+// Updates the window title text.
 Window_Set_Title :: proc(win: ^Window, title: cstring) {
 	win.title = title
 	glfw.SetWindowTitle(win.handle, title)

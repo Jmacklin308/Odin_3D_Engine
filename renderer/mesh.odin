@@ -58,6 +58,7 @@ Instance_Data_From_Transform :: proc(t: eng.Transform, color: eng.Vec3) -> Insta
 	}
 }
 
+// Creates a GPU mesh from vertex data and optional indices.
 Mesh_Create :: proc(vertices: []Vertex, indices: []u32 = nil) -> (mesh: Mesh, ok: bool) {
 	if len(vertices) == 0 {
 		fmt.eprintln("[Mesh] Cannot create a mesh with zero vertices. Nice try.")
@@ -107,6 +108,7 @@ Mesh_Create :: proc(vertices: []Vertex, indices: []u32 = nil) -> (mesh: Mesh, ok
 	return mesh, true
 }
 
+// Destroys the GPU buffers owned by the mesh.
 Mesh_Destroy :: proc(mesh: ^Mesh) {
 	if mesh.ebo         != 0 do gl.DeleteBuffers(1, &mesh.ebo)
 	if mesh.instanceVBO != 0 do gl.DeleteBuffers(1, &mesh.instanceVBO)
@@ -175,6 +177,7 @@ Mesh_Draw_Instanced :: proc(mesh: ^Mesh, instances: []InstanceData) {
 	gl.BindVertexArray(0)
 }
 
+// Draws the mesh once with the currently bound shader.
 Mesh_Draw :: proc(mesh: ^Mesh) {
 	gl.BindVertexArray(mesh.vao)
 	if mesh.indexed {
@@ -184,10 +187,7 @@ Mesh_Draw :: proc(mesh: ^Mesh) {
 	}
 }
 
-// =============================================================================
-// Primitive Generators
-// =============================================================================
-
+// Creates a unit cube centered at the origin.
 Mesh_Create_Cube :: proc() -> (Mesh, bool) {
 	vertices := [24]Vertex{
 		// +X face
@@ -234,6 +234,7 @@ Mesh_Create_Cube :: proc() -> (Mesh, bool) {
 	return Mesh_Create(vertices[:], indices[:])
 }
 
+// Creates an XZ plane centered at the origin.
 Mesh_Create_Plane :: proc(
 	width:         f32 = 1,
 	depth:         f32 = 1,
@@ -275,6 +276,7 @@ Mesh_Create_Plane :: proc(
 	return Mesh_Create(verts[:], indices[:])
 }
 
+// Creates a quad on the XY plane centered at the origin.
 Mesh_Create_Quad :: proc(width: f32 = 1, height: f32 = 1) -> (Mesh, bool) {
 	hw := width  * 0.5
 	hh := height * 0.5

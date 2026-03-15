@@ -56,6 +56,7 @@ Renderer :: struct {
 	gridReady: bool,
 }
 
+// Creates the built-in shaders, frame UBO, and optional debug grid.
 Renderer_Init :: proc(renderer: ^Renderer) -> bool {
 	shader, ok := Shader_Create(_VERT_SRC, _FRAG_SRC)
 	if !ok {
@@ -103,6 +104,7 @@ Renderer_Init :: proc(renderer: ^Renderer) -> bool {
 	return true
 }
 
+// Releases all renderer-owned GPU resources.
 Renderer_Shutdown :: proc(renderer: ^Renderer) {
 	if renderer.gridReady do Grid_Destroy(&renderer.grid)
 	gl.DeleteBuffers(1, &renderer.frameUBO)
@@ -178,18 +180,22 @@ Renderer_Draw_Transform :: proc(renderer: ^Renderer, mesh: ^Mesh, transform: eng
 	Renderer_Draw_Mesh(renderer, mesh, model, color)
 }
 
+// Sets the clear color used by Renderer_Begin.
 Renderer_Set_Clear_Color :: proc(renderer: ^Renderer, color: eng.Vec4) {
 	renderer.clearColor = color
 }
 
+// Sets the active directional light parameters.
 Renderer_Set_Light :: proc(renderer: ^Renderer, light: DirLight) {
 	renderer.light = light
 }
 
+// Binds a shader program for manual draw work.
 Renderer_Use_Shader :: proc(renderer: ^Renderer, shader: ^Shader) {
 	Shader_Bind(shader)
 }
 
+// Rebinds the renderer's default mesh shader.
 Renderer_Use_Default_Shader :: proc(renderer: ^Renderer) {
 	Shader_Bind(&renderer.defaultShader)
 }

@@ -68,7 +68,7 @@ main :: proc() {
 
 	// Spawn a 100×100 grid of cubes (10,000 entities).
 	// Each entity gets a Transform and a MeshRef.
-	GRID :: 317
+	GRID :: 40
 	SPACING :: 1.5
 	for row in 0 ..< GRID {
 		for col in 0 ..< GRID {

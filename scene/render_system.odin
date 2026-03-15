@@ -3,16 +3,7 @@ package scene
 import eng "../engine"
 import rend "../renderer"
 
-// Scene_Render_System groups all entities that have both a Transform and a MeshRef
-// into per-mesh batches, then issues one instanced draw call per unique mesh.
-//
-// Call this between Renderer_Begin and Renderer_End:
-//
-//   rend.Renderer_Begin(&r, &cam, win.aspect)
-//   scene.Scene_Render_System(world)
-//   rend.Renderer_Draw_Grid(&r)
-//   rend.Renderer_End(&r)
-//
+// Batches visible mesh instances by mesh key and submits instanced draw calls.
 Scene_Render_System :: proc(world: ^World) {
 	// --- Clear previous frame's instance lists (keep allocated capacity) ---
 	for i in 0 ..< MESH_REGISTRY_MAX {
@@ -53,7 +44,6 @@ Scene_Render_System :: proc(world: ^World) {
 	}
 }
 
-// Physics_System_Velocity is a simple example system showing the ECS query pattern.
 // Moves every entity that has both a Transform and a Velocity component.
 Physics_System_Velocity :: proc(world: ^World, dt: f32) {
 	q := World_Query(world, COMP_TRANSFORM | COMP_VELOCITY)

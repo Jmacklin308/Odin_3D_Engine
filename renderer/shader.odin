@@ -69,6 +69,7 @@ Shader_Load_Files :: proc(vertPath, fragPath: string) -> (shader: Shader, ok: bo
 	return Shader_Create(string(vertBytes), string(fragBytes))
 }
 
+// Deletes the shader program and clears cached uniform locations.
 Shader_Destroy :: proc(shader: ^Shader) {
 	if shader.id != 0 {
 		delete(shader.uniforms)
@@ -77,43 +78,47 @@ Shader_Destroy :: proc(shader: ^Shader) {
 	}
 }
 
+// Binds the shader program for subsequent draw calls.
 Shader_Bind :: proc(shader: ^Shader) {
 	gl.UseProgram(shader.id)
 }
 
+// Unbinds any currently bound shader program.
 Shader_Unbind :: proc() {
 	gl.UseProgram(0)
 }
 
-// =============================================================================
-// Uniform Setters
-// =============================================================================
-
+// Sets an integer uniform on the shader.
 Shader_Set_Int :: proc(shader: ^Shader, name: cstring, val: i32) {
 	loc := _shader_get_loc(shader, name)
 	gl.Uniform1i(loc, val)
 }
 
+// Sets a float uniform on the shader.
 Shader_Set_Float :: proc(shader: ^Shader, name: cstring, val: f32) {
 	loc := _shader_get_loc(shader, name)
 	gl.Uniform1f(loc, val)
 }
 
+// Sets a vec2 uniform on the shader.
 Shader_Set_Vec2 :: proc(shader: ^Shader, name: cstring, val: [2]f32) {
 	loc := _shader_get_loc(shader, name)
 	gl.Uniform2f(loc, val.x, val.y)
 }
 
+// Sets a vec3 uniform on the shader.
 Shader_Set_Vec3 :: proc(shader: ^Shader, name: cstring, val: [3]f32) {
 	loc := _shader_get_loc(shader, name)
 	gl.Uniform3f(loc, val.x, val.y, val.z)
 }
 
+// Sets a vec4 uniform on the shader.
 Shader_Set_Vec4 :: proc(shader: ^Shader, name: cstring, val: [4]f32) {
 	loc := _shader_get_loc(shader, name)
 	gl.Uniform4f(loc, val.x, val.y, val.z, val.w)
 }
 
+// Sets a 4x4 matrix uniform on the shader.
 Shader_Set_Mat4 :: proc(shader: ^Shader, name: cstring, val: ^matrix[4, 4]f32) {
 	loc := _shader_get_loc(shader, name)
 	gl.UniformMatrix4fv(loc, 1, gl.FALSE, &val[0, 0])

@@ -80,15 +80,13 @@ World :: struct {
 	renderer: ^rend.Renderer,
 }
 
-// =============================================================================
-// Lifecycle
-// =============================================================================
-
+// Initializes a world and binds it to the renderer used for scene draws.
 World_Init :: proc(world: ^World, renderer: ^rend.Renderer) {
 	world.renderer = renderer
 	world.freeList = make([dynamic]u32)
 }
 
+// Releases dynamic world storage and clears all state.
 World_Shutdown :: proc(world: ^World) {
 	for i in 0 ..< MESH_REGISTRY_MAX {
 		if world._batches[i].mesh != nil {
@@ -115,10 +113,6 @@ World_Register_Mesh :: proc(world: ^World, mesh: ^rend.Mesh) -> (key: u32, ok: b
 	world.meshRegistryCount += 1
 	return key, true
 }
-
-// =============================================================================
-// Entity Lifecycle
-// =============================================================================
 
 // Create a new entity and return its handle.  Reuses freed slots when available.
 World_Entity_Create :: proc(world: ^World) -> EntityID {
@@ -154,10 +148,7 @@ World_Entity_Valid :: proc(world: ^World, id: EntityID) -> bool {
 	return world.generations[idx] == _entity_gen(id)
 }
 
-// =============================================================================
-// Transform Component
-// =============================================================================
-
+// Adds or replaces the Transform component for a live entity.
 World_Add_Transform :: proc(world: ^World, id: EntityID, t: eng.Transform) -> bool {
 	if !World_Entity_Valid(world, id) do return false
 	idx := _entity_index(id)
@@ -166,6 +157,7 @@ World_Add_Transform :: proc(world: ^World, id: EntityID, t: eng.Transform) -> bo
 	return true
 }
 
+// Returns a pointer to the entity's Transform component.
 World_Get_Transform :: proc(world: ^World, id: EntityID) -> (t: ^eng.Transform, ok: bool) {
 	if !World_Entity_Valid(world, id) do return nil, false
 	idx := _entity_index(id)
@@ -173,15 +165,13 @@ World_Get_Transform :: proc(world: ^World, id: EntityID) -> (t: ^eng.Transform, 
 	return &world.transforms[idx], true
 }
 
+// Removes the Transform component from a live entity.
 World_Remove_Transform :: proc(world: ^World, id: EntityID) {
 	if !World_Entity_Valid(world, id) do return
 	world.masks[_entity_index(id)] &~= COMP_TRANSFORM
 }
 
-// =============================================================================
-// MeshRef Component
-// =============================================================================
-
+// Adds or replaces the MeshRef component for a live entity.
 World_Add_MeshRef :: proc(world: ^World, id: EntityID, ref: MeshRef) -> bool {
 	if !World_Entity_Valid(world, id) do return false
 	idx := _entity_index(id)
@@ -190,6 +180,7 @@ World_Add_MeshRef :: proc(world: ^World, id: EntityID, ref: MeshRef) -> bool {
 	return true
 }
 
+// Returns a pointer to the entity's MeshRef component.
 World_Get_MeshRef :: proc(world: ^World, id: EntityID) -> (ref: ^MeshRef, ok: bool) {
 	if !World_Entity_Valid(world, id) do return nil, false
 	idx := _entity_index(id)
@@ -197,15 +188,13 @@ World_Get_MeshRef :: proc(world: ^World, id: EntityID) -> (ref: ^MeshRef, ok: bo
 	return &world.meshRefs[idx], true
 }
 
+// Removes the MeshRef component from a live entity.
 World_Remove_MeshRef :: proc(world: ^World, id: EntityID) {
 	if !World_Entity_Valid(world, id) do return
 	world.masks[_entity_index(id)] &~= COMP_MESH_REF
 }
 
-// =============================================================================
-// Velocity Component
-// =============================================================================
-
+// Adds or replaces the Velocity component for a live entity.
 World_Add_Velocity :: proc(world: ^World, id: EntityID, v: eng.Vec3) -> bool {
 	if !World_Entity_Valid(world, id) do return false
 	idx := _entity_index(id)
@@ -214,6 +203,7 @@ World_Add_Velocity :: proc(world: ^World, id: EntityID, v: eng.Vec3) -> bool {
 	return true
 }
 
+// Returns a pointer to the entity's Velocity component.
 World_Get_Velocity :: proc(world: ^World, id: EntityID) -> (v: ^eng.Vec3, ok: bool) {
 	if !World_Entity_Valid(world, id) do return nil, false
 	idx := _entity_index(id)
@@ -221,6 +211,7 @@ World_Get_Velocity :: proc(world: ^World, id: EntityID) -> (v: ^eng.Vec3, ok: bo
 	return &world.velocities[idx], true
 }
 
+// Removes the Velocity component from a live entity.
 World_Remove_Velocity :: proc(world: ^World, id: EntityID) {
 	if !World_Entity_Valid(world, id) do return
 	world.masks[_entity_index(id)] &~= COMP_VELOCITY

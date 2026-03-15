@@ -42,17 +42,13 @@ Camera_Create :: proc(pos: Vec3, fovYDegrees: f32 = 75, near: f32 = 0.1, far: f3
 	return cam
 }
 
-// =============================================================================
-// Matrix Access
-// Pass aspect = window.width / window.height.
-// Matrices are lazily rebuilt; reading them is cheap when nothing has moved.
-// =============================================================================
-
+// Returns the camera view matrix.
 Camera_Get_View :: proc(cam: ^Camera) -> Mat4 {
 	if cam.dirty do _camera_rebuild(cam, 0) // aspect not needed for view
 	return cam.view
 }
 
+// Returns the camera projection matrix for the given aspect ratio.
 Camera_Get_Projection :: proc(cam: ^Camera, aspect: f32) -> Mat4 {
 	// Projection always needs the current aspect, so always rebuild it.
 	cam.projection = Mat4_Perspective(cam.fovY, aspect, cam.nearPlane, cam.farPlane)
@@ -64,10 +60,6 @@ Camera_Get_VP :: proc(cam: ^Camera, aspect: f32) -> (view, proj: Mat4) {
 	_camera_rebuild(cam, aspect)
 	return cam.view, cam.projection
 }
-
-// =============================================================================
-// Direction Vectors
-// =============================================================================
 
 // The direction the camera is pointing (normalised).
 Camera_Get_Forward :: proc(cam: ^Camera) -> Vec3 {
@@ -83,12 +75,6 @@ Camera_Get_Right :: proc(cam: ^Camera) -> Vec3 {
 	forward := Camera_Get_Forward(cam)
 	return Vec3_Normalize(Vec3_Cross(forward, VEC3_UP))
 }
-
-// =============================================================================
-// Movement
-// These are intentionally low-level — call them from your player controller.
-// Multiply delta by deltaTime and a speed scalar before passing in.
-// =============================================================================
 
 // Move the camera by a world-space offset.
 Camera_Move :: proc(cam: ^Camera, delta: Vec3) {
@@ -137,12 +123,6 @@ Camera_Look_At :: proc(cam: ^Camera, target: Vec3) {
 	cam.dirty = true
 }
 
-// =============================================================================
-// FPS Input Helper
-// Wraps the common "WASD + mouse look" pattern.
-// Call every frame from your game loop.
-// =============================================================================
-
 CameraFPSParams :: struct {
 	moveSpeed:    f32, // Units per second for WASD movement
 	mouseSensitivity: f32, // Radians per pixel of mouse movement
@@ -155,6 +135,7 @@ DEFAULT_FPS_PARAMS :: CameraFPSParams{
 	sprintMult       = 3.0,
 }
 
+// Applies the built-in WASD, mouse-look, and sprint camera controls.
 Camera_FPS_Update :: proc(cam: ^Camera, input: ^Input, dt: f32, params: CameraFPSParams = DEFAULT_FPS_PARAMS) {
 	// Mouse look
 	delta := Input_Mouse_Delta(input)
