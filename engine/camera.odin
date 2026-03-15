@@ -158,7 +158,7 @@ DEFAULT_FPS_PARAMS :: CameraFPSParams{
 Camera_FPS_Update :: proc(cam: ^Camera, input: ^Input, dt: f32, params: CameraFPSParams = DEFAULT_FPS_PARAMS) {
 	// Mouse look
 	delta := Input_Mouse_Delta(input)
-	Camera_Rotate(cam, -delta.x * params.mouseSensitivity, delta.y * params.mouseSensitivity)
+	Camera_Rotate(cam, delta.x * params.mouseSensitivity, -delta.y * params.mouseSensitivity)
 
 	// Movement
 	speed := params.moveSpeed
@@ -170,8 +170,8 @@ Camera_FPS_Update :: proc(cam: ^Camera, input: ^Input, dt: f32, params: CameraFP
 	rgt   : f32 = 0
 	vert  : f32 = 0
 
-	if Input_Key_Down(input, KEY_W) do fwd  -= speed * dt
-	if Input_Key_Down(input, KEY_S) do fwd  += speed * dt
+	if Input_Key_Down(input, KEY_W) do fwd  += speed * dt
+	if Input_Key_Down(input, KEY_S) do fwd  -= speed * dt
 	if Input_Key_Down(input, KEY_D) do rgt  += speed * dt
 	if Input_Key_Down(input, KEY_A) do rgt  -= speed * dt
 	if Input_Key_Down(input, KEY_E) do vert += speed * dt

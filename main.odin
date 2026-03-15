@@ -2,6 +2,7 @@ package main
 
 import eng "engine"
 import rend "renderer"
+import scene "scene"
 import "core:fmt"
 import "core:mem"
 
@@ -39,7 +40,7 @@ main :: proc() {
 	}
 	defer rend.Renderer_Shutdown(&r)
 
-	cam := eng.Camera_Create({0, 2, 5}, 75)
+	cam := eng.Camera_Create({0, 80, 300}, 75)
 	eng.Camera_Look_At(&cam, {0, 0, 0})
 	eng.Input_Set_Cursor_Locked(eng.Get_Input(), eng.Get_Window(), true)
 
@@ -50,22 +51,52 @@ main :: proc() {
 	}
 	defer rend.Mesh_Destroy(&cube)
 
-	// plane, planeOk := rend.Mesh_Create_Plane(20, 20, 10, 10)
-	// if !planeOk {
-	// 	fmt.eprintln("Failed to create plane mesh.")
-	// 	return
-	// }
-	// defer rend.Mesh_Destroy(&plane)
+	// --- Scene / ECS setup ---
+	// World is ~10 MB; allocate on the heap to avoid stack overflow.
+	world := new(scene.World)
+	scene.World_Init(world, &r)
+	defer {
+		scene.World_Shutdown(world)
+		free(world)
+	}
 
-	angle: f32 = 0
+	cubeKey, keyOk := scene.World_Register_Mesh(world, &cube)
+	if !keyOk {
+		fmt.eprintln("Failed to register cube mesh with scene.")
+		return
+	}
+
+	// Spawn a 100×100 grid of cubes (10,000 entities).
+	// Each entity gets a Transform and a MeshRef.
+	GRID :: 317
+	SPACING :: 1.5
+	for row in 0 ..< GRID {
+		for col in 0 ..< GRID {
+			e := scene.World_Entity_Create(world)
+			x := (f32(col) - f32(GRID) * 0.5) * SPACING
+			z := (f32(row) - f32(GRID) * 0.5) * SPACING
+			scene.World_Add_Transform(world, e, eng.Transform{
+				position = {x, 0, z},
+				rotation = eng.QUAT_IDENTITY,
+				scale    = {0.4, 0.4, 0.4},
+			})
+			scene.World_Add_MeshRef(world, e, scene.MeshRef{
+				meshKey = cubeKey,
+				color   = {0.8, 0.4, 0.2},
+			})
+		}
+	}
 
 	for eng.Running() {
 		eng.Begin_Frame()
-		
+
 		fps := eng.Get_FPS()
-		title := fmt.ctprintf("3D Engine | FPS: %.0f | %.2f ms", fps, 1000.0 / fps)
+		title := fmt.ctprintf(
+			"3D Engine | %d entities | FPS: %.0f | %.2f ms",
+			world.count, fps, 1000.0 / fps,
+		)
 		eng.Window_Set_Title(eng.Get_Window(), title)
-		
+
 		dt  := eng.Get_Delta_Time()
 		inp := eng.Get_Input()
 		win := eng.Get_Window()
@@ -79,23 +110,12 @@ main :: proc() {
 		eng.Camera_FPS_Update(&cam, inp, dt)
 
 		rend.Renderer_Begin(&r, &cam, win.aspect)
-			
-		//rotate our cube
-		angle += dt * 0.8
-		cubeModel := eng.Mat4_Rotate(angle, {0.3, 1, 0.2})
-		
-		
-		//draw our cube
-		rend.Renderer_Draw_Mesh(&r, &cube, cubeModel, {0.8, 0.4, 0.2})
 
-		planeModel := eng.Mat4_Translate({0, -0.5, 0})
-		// rend.Renderer_Draw_Mesh(&r, &plane, planeModel, {0.3, 0.6, 0.3})
+		// Draw all ECS entities — one instanced draw call for the whole grid.
+		scene.Scene_Render_System(world)
 
-		// Draw our grid here
 		rend.Renderer_Draw_Grid(&r)
-		
-		
-		
+
 		rend.Renderer_End(&r)
 		eng.End_Frame()
 	}

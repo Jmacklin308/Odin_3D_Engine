@@ -107,7 +107,10 @@ Vec3_Reflect :: proc(v, normal: Vec3) -> Vec3 {
 // Perspective projection matrix.
 // fovY is in radians. aspect = width/height. near/far are clip plane distances.
 Mat4_Perspective :: proc(fovY, aspect, near, far: f32) -> Mat4 {
-	return linalg.matrix4_perspective_f32(fovY, aspect, near, far, false)
+	// Keep projection handedness consistent with Mat4_Look_At and the engine's
+	// "-Z is forward" convention. A mismatched flip_z_axis inverts face winding
+	// after projection, which looks like inside-out meshes when culling is on.
+	return linalg.matrix4_perspective_f32(fovY, aspect, near, far, true)
 }
 
 // View matrix: positions the camera at `eye` looking toward `target`.

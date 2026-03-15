@@ -26,9 +26,36 @@ Mesh :: struct {
 	vao:         u32,
 	vbo:         u32,
 	ebo:         u32,
+	instanceVBO: u32, // 0 = instancing not enabled
 	indexCount:  i32,
 	vertexCount: i32,
 	indexed:     bool,
+}
+
+// Per-instance data uploaded to the GPU each frame.
+// Contains the model matrix (as 4 column vectors) and a solid colour.
+// Note: instanced rendering requires uniform scale — normals are transformed
+// with mat3(model). Add a normal matrix field if non-uniform scale is needed.
+InstanceData :: struct {
+	modelCol0: eng.Vec4, // column 0 of model matrix
+	modelCol1: eng.Vec4, // column 1
+	modelCol2: eng.Vec4, // column 2
+	modelCol3: eng.Vec4, // column 3 (translation)
+	color:     eng.Vec4, // rgb + padding
+} // 80 bytes
+
+// Build InstanceData from a Transform and a solid colour.
+Instance_Data_From_Transform :: proc(t: eng.Transform, color: eng.Vec3) -> InstanceData {
+	m := eng.Transform_To_Mat4(t)
+	return InstanceData{
+		// Odin matrix[4,4]f32 is column-major: m[row, col].
+		// Each modelColN is one column of the matrix.
+		modelCol0 = {m[0, 0], m[1, 0], m[2, 0], m[3, 0]},
+		modelCol1 = {m[0, 1], m[1, 1], m[2, 1], m[3, 1]},
+		modelCol2 = {m[0, 2], m[1, 2], m[2, 2], m[3, 2]},
+		modelCol3 = {m[0, 3], m[1, 3], m[2, 3], m[3, 3]},
+		color     = {color.x, color.y, color.z, 1},
+	}
 }
 
 Mesh_Create :: proc(vertices: []Vertex, indices: []u32 = nil) -> (mesh: Mesh, ok: bool) {
@@ -81,10 +108,71 @@ Mesh_Create :: proc(vertices: []Vertex, indices: []u32 = nil) -> (mesh: Mesh, ok
 }
 
 Mesh_Destroy :: proc(mesh: ^Mesh) {
-	if mesh.ebo != 0 do gl.DeleteBuffers(1, &mesh.ebo)
-	if mesh.vbo != 0 do gl.DeleteBuffers(1, &mesh.vbo)
-	if mesh.vao != 0 do gl.DeleteVertexArrays(1, &mesh.vao)
+	if mesh.ebo         != 0 do gl.DeleteBuffers(1, &mesh.ebo)
+	if mesh.instanceVBO != 0 do gl.DeleteBuffers(1, &mesh.instanceVBO)
+	if mesh.vbo         != 0 do gl.DeleteBuffers(1, &mesh.vbo)
+	if mesh.vao         != 0 do gl.DeleteVertexArrays(1, &mesh.vao)
 	mesh^ = {}
+}
+
+// Enable instanced rendering on an existing mesh.
+// Allocates a GPU buffer sized for maxInstances * size_of(InstanceData).
+// Registers instance attributes at locations 3-7 with divisor 1.
+// Call once after Mesh_Create; safe to call again (no-op if already enabled).
+Mesh_Enable_Instancing :: proc(mesh: ^Mesh, maxInstances: int) -> bool {
+	if mesh.instanceVBO != 0 do return true // already set up
+
+	gl.BindVertexArray(mesh.vao)
+	gl.GenBuffers(1, &mesh.instanceVBO)
+	gl.BindBuffer(gl.ARRAY_BUFFER, mesh.instanceVBO)
+	gl.BufferData(gl.ARRAY_BUFFER, maxInstances * size_of(InstanceData), nil, gl.DYNAMIC_DRAW)
+
+	stride := i32(size_of(InstanceData))
+	// Locations 3-6: model matrix columns (one vec4 each)
+	for col in 0 ..< 4 {
+		loc := u32(3 + col)
+		off := uintptr(col * size_of(eng.Vec4))
+		gl.VertexAttribPointer(loc, 4, gl.FLOAT, gl.FALSE, stride, off)
+		gl.EnableVertexAttribArray(loc)
+		gl.VertexAttribDivisor(loc, 1)
+	}
+	// Location 7: colour (vec4)
+	gl.VertexAttribPointer(7, 4, gl.FLOAT, gl.FALSE, stride, uintptr(4 * size_of(eng.Vec4)))
+	gl.EnableVertexAttribArray(7)
+	gl.VertexAttribDivisor(7, 1)
+
+	gl.BindBuffer(gl.ARRAY_BUFFER, 0)
+	gl.BindVertexArray(0)
+	return true
+}
+
+// Upload instance data and issue a single instanced draw call.
+// Must be called with the instancing shader bound.
+Mesh_Draw_Instanced :: proc(mesh: ^Mesh, instances: []InstanceData) {
+	if mesh.instanceVBO == 0 || len(instances) == 0 do return
+
+	gl.BindBuffer(gl.ARRAY_BUFFER, mesh.instanceVBO)
+	gl.BufferSubData(
+		gl.ARRAY_BUFFER,
+		0,
+		len(instances) * size_of(InstanceData),
+		raw_data(instances),
+	)
+	gl.BindBuffer(gl.ARRAY_BUFFER, 0)
+
+	gl.BindVertexArray(mesh.vao)
+	if mesh.indexed {
+		gl.DrawElementsInstanced(
+			gl.TRIANGLES,
+			mesh.indexCount,
+			gl.UNSIGNED_INT,
+			nil,
+			i32(len(instances)),
+		)
+	} else {
+		gl.DrawArraysInstanced(gl.TRIANGLES, 0, mesh.vertexCount, i32(len(instances)))
+	}
+	gl.BindVertexArray(0)
 }
 
 Mesh_Draw :: proc(mesh: ^Mesh) {

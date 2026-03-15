@@ -39,9 +39,10 @@ _FrameUniforms :: struct #align(16) {
 // =============================================================================
 
 Renderer :: struct {
-	defaultShader: Shader,
-	clearColor:    eng.Vec4,
-	light:         DirLight,
+	defaultShader:   Shader,
+	instancedShader: Shader, // for GPU-instanced draws
+	clearColor:      eng.Vec4,
+	light:           DirLight,
 
 	// Cached per-frame matrices, set in Renderer_Begin.
 	viewMat:  eng.Mat4,
@@ -65,6 +66,15 @@ Renderer_Init :: proc(renderer: ^Renderer) -> bool {
 	renderer.clearColor    = {0.1, 0.1, 0.15, 1.0}
 	renderer.light         = DEFAULT_LIGHT
 
+	// Compile instancing shader.
+	iShader, iOk := Shader_Create(_INSTANCED_VERT_SRC, _INSTANCED_FRAG_SRC)
+	if !iOk {
+		fmt.eprintln("[Renderer] Failed to compile instancing shader.")
+		Shader_Destroy(&renderer.defaultShader)
+		return false
+	}
+	renderer.instancedShader = iShader
+
 	// Create per-frame UBO at binding point 0.
 	gl.GenBuffers(1, &renderer.frameUBO)
 	gl.BindBuffer(gl.UNIFORM_BUFFER, renderer.frameUBO)
@@ -72,10 +82,14 @@ Renderer_Init :: proc(renderer: ^Renderer) -> bool {
 	gl.BindBufferBase(gl.UNIFORM_BUFFER, 0, renderer.frameUBO)
 	gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
 
-	// Bind the default shader's uniform block to binding point 0.
+	// Bind both shaders' uniform blocks to binding point 0.
 	blockIdx := gl.GetUniformBlockIndex(renderer.defaultShader.id, "FrameUniforms")
 	if blockIdx != gl.INVALID_INDEX {
 		gl.UniformBlockBinding(renderer.defaultShader.id, blockIdx, 0)
+	}
+	iBlockIdx := gl.GetUniformBlockIndex(renderer.instancedShader.id, "FrameUniforms")
+	if iBlockIdx != gl.INVALID_INDEX {
+		gl.UniformBlockBinding(renderer.instancedShader.id, iBlockIdx, 0)
 	}
 
 	cfg := eng.Get_Config()
@@ -92,6 +106,7 @@ Renderer_Init :: proc(renderer: ^Renderer) -> bool {
 Renderer_Shutdown :: proc(renderer: ^Renderer) {
 	if renderer.gridReady do Grid_Destroy(&renderer.grid)
 	gl.DeleteBuffers(1, &renderer.frameUBO)
+	Shader_Destroy(&renderer.instancedShader)
 	Shader_Destroy(&renderer.defaultShader)
 }
 
@@ -179,6 +194,16 @@ Renderer_Use_Default_Shader :: proc(renderer: ^Renderer) {
 	Shader_Bind(&renderer.defaultShader)
 }
 
+// Draw a batch of instances in a single draw call.
+// Binds the instancing shader, uploads instance data, draws, then restores the default shader.
+// Call between Renderer_Begin and Renderer_End.
+Renderer_Draw_Instanced :: proc(renderer: ^Renderer, mesh: ^Mesh, instances: []InstanceData) {
+	if len(instances) == 0 do return
+	Shader_Bind(&renderer.instancedShader)
+	Mesh_Draw_Instanced(mesh, instances)
+	Shader_Bind(&renderer.defaultShader)
+}
+
 // =============================================================================
 // Built-in Blinn-Phong Shader Source
 // =============================================================================
@@ -248,6 +273,90 @@ void main() {
     vec3  specular = spec * uLightColor.xyz * 0.3;
 
     vec3 result = (uAmbient.xyz + diffuse + specular) * uColor;
+    fragColor   = vec4(result, 1.0);
+}
+`
+
+// =============================================================================
+// Instancing Shader Source
+// Per-instance attributes (divisor 1) at locations 3-7:
+//   3-6: model matrix columns (vec4 each)
+//   7:   colour (vec4, w unused)
+// NOTE: normals are transformed with mat3(model) — correct only for uniform scale.
+// =============================================================================
+
+@(private)
+_INSTANCED_VERT_SRC :: `#version 410 core
+
+// Per-vertex (divisor 0)
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec3 aNormal;
+layout(location = 2) in vec2 aUV;
+
+// Per-instance (divisor 1)
+layout(location = 3) in vec4 iModelCol0;
+layout(location = 4) in vec4 iModelCol1;
+layout(location = 5) in vec4 iModelCol2;
+layout(location = 6) in vec4 iModelCol3;
+layout(location = 7) in vec4 iColor;
+
+layout(std140) uniform FrameUniforms {
+    mat4 uView;
+    mat4 uProjection;
+    vec4 uViewPos;
+    vec4 uLightDir;
+    vec4 uLightColor;
+    vec4 uAmbient;
+};
+
+out vec3 vFragPos;
+out vec3 vNormal;
+out vec2 vUV;
+out vec3 vColor;
+
+void main() {
+    mat4 model  = mat4(iModelCol0, iModelCol1, iModelCol2, iModelCol3);
+    vec4 worldPos = model * vec4(aPos, 1.0);
+    vFragPos    = worldPos.xyz;
+    vNormal     = normalize(mat3(model) * aNormal);
+    vUV         = aUV;
+    vColor      = iColor.rgb;
+    gl_Position = uProjection * uView * worldPos;
+}
+`
+
+@(private)
+_INSTANCED_FRAG_SRC :: `#version 410 core
+
+in vec3 vFragPos;
+in vec3 vNormal;
+in vec2 vUV;
+in vec3 vColor;
+
+layout(std140) uniform FrameUniforms {
+    mat4 uView;
+    mat4 uProjection;
+    vec4 uViewPos;
+    vec4 uLightDir;
+    vec4 uLightColor;
+    vec4 uAmbient;
+};
+
+out vec4 fragColor;
+
+void main() {
+    vec3 normal   = normalize(vNormal);
+    vec3 lightDir = normalize(-uLightDir.xyz);
+
+    float diff    = max(dot(normal, lightDir), 0.0);
+    vec3  diffuse = diff * uLightColor.xyz;
+
+    vec3  viewDir  = normalize(uViewPos.xyz - vFragPos);
+    vec3  halfDir  = normalize(lightDir + viewDir);
+    float spec     = pow(max(dot(normal, halfDir), 0.0), 32.0);
+    vec3  specular = spec * uLightColor.xyz * 0.3;
+
+    vec3 result = (uAmbient.xyz + diffuse + specular) * vColor;
     fragColor   = vec4(result, 1.0);
 }
 `
