@@ -3,7 +3,6 @@
 > *Yes, it's another 3D engine. No, it's not done. Yes, it will be fun anyway.*
 
 ---
-
 ## Table of Contents
 
 1. [Project Structure](#project-structure)

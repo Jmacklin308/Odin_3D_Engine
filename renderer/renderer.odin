@@ -41,6 +41,7 @@ _FrameUniforms :: struct #align(16) {
 Renderer :: struct {
 	defaultShader:   Shader,
 	instancedShader: Shader, // for GPU-instanced draws
+	overlayShader:   Shader, // for simple screen-space editor overlays
 	clearColor:      eng.Vec4,
 	light:           DirLight,
 
@@ -54,6 +55,7 @@ Renderer :: struct {
 	// Debug overlays
 	grid:      Grid,
 	gridReady: bool,
+	overlayQuad: Mesh,
 }
 
 // Creates the built-in shaders, frame UBO, and optional debug grid.
@@ -75,6 +77,25 @@ Renderer_Init :: proc(renderer: ^Renderer) -> bool {
 		return false
 	}
 	renderer.instancedShader = iShader
+
+	overlayShader, overlayOk := Shader_Create(_OVERLAY_VERT_SRC, _OVERLAY_FRAG_SRC)
+	if !overlayOk {
+		fmt.eprintln("[Renderer] Failed to compile overlay shader.")
+		Shader_Destroy(&renderer.instancedShader)
+		Shader_Destroy(&renderer.defaultShader)
+		return false
+	}
+	renderer.overlayShader = overlayShader
+
+	overlayQuad, quadOk := Mesh_Create_Quad()
+	if !quadOk {
+		fmt.eprintln("[Renderer] Failed to create overlay quad.")
+		Shader_Destroy(&renderer.overlayShader)
+		Shader_Destroy(&renderer.instancedShader)
+		Shader_Destroy(&renderer.defaultShader)
+		return false
+	}
+	renderer.overlayQuad = overlayQuad
 
 	// Create per-frame UBO at binding point 0.
 	gl.GenBuffers(1, &renderer.frameUBO)
@@ -108,6 +129,8 @@ Renderer_Init :: proc(renderer: ^Renderer) -> bool {
 Renderer_Shutdown :: proc(renderer: ^Renderer) {
 	if renderer.gridReady do Grid_Destroy(&renderer.grid)
 	gl.DeleteBuffers(1, &renderer.frameUBO)
+	Mesh_Destroy(&renderer.overlayQuad)
+	Shader_Destroy(&renderer.overlayShader)
 	Shader_Destroy(&renderer.instancedShader)
 	Shader_Destroy(&renderer.defaultShader)
 }
@@ -208,6 +231,47 @@ Renderer_Draw_Instanced :: proc(renderer: ^Renderer, mesh: ^Mesh, instances: []I
 	Shader_Bind(&renderer.instancedShader)
 	Mesh_Draw_Instanced(mesh, instances)
 	Shader_Bind(&renderer.defaultShader)
+}
+
+// Draws a solid rectangle in screen pixel coordinates.
+// Intended for lightweight editor overlays such as marquee selection.
+Renderer_Draw_Screen_Rect :: proc(renderer: ^Renderer, screenSize, min, max: eng.Vec2, color: eng.Vec4) {
+	width  := max.x - min.x
+	height := max.y - min.y
+	if width <= 0 || height <= 0 do return
+
+	gl.Disable(gl.DEPTH_TEST)
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+	gl.Disable(gl.CULL_FACE)
+
+	Shader_Bind(&renderer.overlayShader)
+	Shader_Set_Vec2(&renderer.overlayShader, "uScreenSize", screenSize)
+	Shader_Set_Vec4(&renderer.overlayShader, "uRect", {min.x, min.y, width, height})
+	Shader_Set_Vec4(&renderer.overlayShader, "uColor", color)
+	Mesh_Draw(&renderer.overlayQuad)
+
+	gl.Disable(gl.BLEND)
+	gl.Enable(gl.CULL_FACE)
+	gl.Enable(gl.DEPTH_TEST)
+	Shader_Bind(&renderer.defaultShader)
+}
+
+// Draws a translucent marquee with a crisp border.
+Renderer_Draw_Marquee :: proc(renderer: ^Renderer, screenSize, p0, p1: eng.Vec2) {
+	min := eng.Vec2{min(p0.x, p1.x), min(p0.y, p1.y)}
+	max := eng.Vec2{max(p0.x, p1.x), max(p0.y, p1.y)}
+	if max.x - min.x <= 0 || max.y - min.y <= 0 do return
+
+	border := f32(2.0)
+	fillColor   := eng.Vec4{1.0, 0.85, 0.0, 0.18}
+	borderColor := eng.Vec4{1.0, 0.92, 0.35, 0.95}
+
+	Renderer_Draw_Screen_Rect(renderer, screenSize, min, max, fillColor)
+	Renderer_Draw_Screen_Rect(renderer, screenSize, min, {max.x, min.y + border}, borderColor)
+	Renderer_Draw_Screen_Rect(renderer, screenSize, {min.x, max.y - border}, max, borderColor)
+	Renderer_Draw_Screen_Rect(renderer, screenSize, min, {min.x + border, max.y}, borderColor)
+	Renderer_Draw_Screen_Rect(renderer, screenSize, {max.x - border, min.y}, max, borderColor)
 }
 
 // =============================================================================
@@ -364,5 +428,36 @@ void main() {
 
     vec3 result = (uAmbient.xyz + diffuse + specular) * vColor;
     fragColor   = vec4(result, 1.0);
+}
+`
+
+@(private)
+_OVERLAY_VERT_SRC :: `#version 410 core
+
+layout(location = 0) in vec3 aPos;
+
+uniform vec2 uScreenSize;
+uniform vec4 uRect;
+
+void main() {
+    vec2 uv    = aPos.xy + vec2(0.5, 0.5);
+    vec2 pixel = uRect.xy + uv * uRect.zw;
+    vec2 ndc   = vec2(
+        (pixel.x / uScreenSize.x) * 2.0 - 1.0,
+        1.0 - (pixel.y / uScreenSize.y) * 2.0
+    );
+    gl_Position = vec4(ndc, 0.0, 1.0);
+}
+`
+
+@(private)
+_OVERLAY_FRAG_SRC :: `#version 410 core
+
+uniform vec4 uColor;
+
+out vec4 fragColor;
+
+void main() {
+    fragColor = uColor;
 }
 `

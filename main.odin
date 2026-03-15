@@ -42,7 +42,7 @@ main :: proc() {
 
 	cam := eng.Camera_Create({0, 80, 300}, 75)
 	eng.Camera_Look_At(&cam, {0, 0, 0})
-	eng.Input_Set_Cursor_Locked(eng.Get_Input(), eng.Get_Window(), true)
+	// Cursor starts unlocked — right-click to enter fly mode (Unity/Godot style).
 
 	cube, cubeOk := rend.Mesh_Create_Cube()
 	if !cubeOk {
@@ -87,34 +87,75 @@ main :: proc() {
 		}
 	}
 
+	selection := new(scene.Selection_Set)
+	defer free(selection)
+
+	marquee: scene.Marquee_Selection
+
 	for eng.Running() {
 		eng.Begin_Frame()
 
 		fps := eng.Get_FPS()
 		title := fmt.ctprintf(
-			"3D Engine | %d entities | FPS: %.0f | %.2f ms",
-			world.count, fps, 1000.0 / fps,
+			"3D Engine | %d entities | %d selected | FPS: %.0f | %.2f ms | [RMB] fly  [LMB] select  [Shift+LMB] add",
+			world.count, selection.count, fps, 1000.0 / fps,
 		)
-		eng.Window_Set_Title(eng.Get_Window(), title)
 
+		eng.Window_Set_Title(eng.Get_Window(), title)
 		dt  := eng.Get_Delta_Time()
 		inp := eng.Get_Input()
 		win := eng.Get_Window()
 
 		if eng.Input_Key_Pressed(inp, eng.KEY_ESCAPE) do eng.Quit()
 
-		if eng.Input_Key_Pressed(inp, eng.KEY_TAB) {
-			eng.Input_Set_Cursor_Locked(inp, win, !inp.cursorLocked)
-		}
+		// Right-click fly mode (Unity/Godot style).
+		eng.Camera_FPS_Update_RMB(&cam, inp, win, dt)
 
-		eng.Camera_FPS_Update(&cam, inp, dt)
+		screenSize := eng.Vec2{f32(win.width), f32(win.height)}
+		additiveSelection := eng.Input_Key_Down(inp, eng.KEY_LEFT_SHIFT)
+
+		// Left mouse supports both click-pick and drag marquee while the cursor is free.
+		if !inp.cursorLocked {
+			if eng.Input_Mouse_Pressed(inp, eng.MOUSE_LEFT) {
+				scene.Marquee_Begin(&marquee, inp.mousePos)
+			}
+
+			if marquee.active && eng.Input_Mouse_Down(inp, eng.MOUSE_LEFT) {
+				scene.Marquee_Update(&marquee, inp.mousePos)
+			}
+
+			if marquee.active && eng.Input_Mouse_Released(inp, eng.MOUSE_LEFT) {
+				if marquee.dragging {
+					if !additiveSelection do scene.Selection_Clear(selection)
+					scene.Scene_Select_Marquee(world, selection, &marquee, screenSize, &cam, win.aspect)
+				} else {
+					origin, dir := scene.Scene_Ray_From_Screen(inp.mousePos, screenSize, &cam, win.aspect)
+					picked := scene.Scene_Pick(world, origin, dir)
+
+					if picked != scene.ENTITY_NULL {
+						if additiveSelection {
+							scene.Selection_Add_ID(selection, world, picked)
+						} else {
+							scene.Selection_Set_Single(selection, world, picked)
+						}
+					} else if !additiveSelection {
+						scene.Selection_Clear(selection)
+					}
+				}
+
+				scene.Marquee_End(&marquee)
+			}
+		}
 
 		rend.Renderer_Begin(&r, &cam, win.aspect)
 
-		// Draw all ECS entities — one instanced draw call for the whole grid.
-		scene.Scene_Render_System(world)
+		// Draw all ECS entities — selected one is tinted yellow.
+		scene.Scene_Render_System(world, selection)
 
 		rend.Renderer_Draw_Grid(&r)
+		if marquee.dragging {
+			rend.Renderer_Draw_Marquee(&r, screenSize, marquee.start, marquee.current)
+		}
 
 		rend.Renderer_End(&r)
 		eng.End_Frame()

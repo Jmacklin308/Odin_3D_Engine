@@ -3,8 +3,12 @@ package scene
 import eng "../engine"
 import rend "../renderer"
 
+// Tint applied to the selected entity's colour in the render batch.
+SELECTION_TINT :: eng.Vec3{1.0, 0.85, 0.0} // bright yellow
+
 // Batches visible mesh instances by mesh key and submits instanced draw calls.
-Scene_Render_System :: proc(world: ^World) {
+// Pass a Selection_Set to tint selected entities with SELECTION_TINT.
+Scene_Render_System :: proc(world: ^World, selection: ^Selection_Set = nil) {
 	// --- Clear previous frame's instance lists (keep allocated capacity) ---
 	for i in 0 ..< MESH_REGISTRY_MAX {
 		if world._batches[i].mesh != nil {
@@ -32,7 +36,11 @@ Scene_Render_System :: proc(world: ^World) {
 			}
 		}
 
-		inst := rend.Instance_Data_From_Transform(world.transforms[i], meshRef.color)
+		// Tint selected entity yellow, otherwise use the mesh's own colour.
+		color  := meshRef.color
+		if Selection_Contains_Index(selection, world, u32(i)) do color = SELECTION_TINT
+
+		inst := rend.Instance_Data_From_Transform(world.transforms[i], color)
 		append(&world._batches[batchIdx].instanceData, inst)
 	}
 

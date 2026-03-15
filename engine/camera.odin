@@ -136,6 +136,7 @@ DEFAULT_FPS_PARAMS :: CameraFPSParams{
 }
 
 // Applies the built-in WASD, mouse-look, and sprint camera controls.
+// Always active — use Camera_FPS_Update_RMB for Unity/Godot-style right-click-to-look.
 Camera_FPS_Update :: proc(cam: ^Camera, input: ^Input, dt: f32, params: CameraFPSParams = DEFAULT_FPS_PARAMS) {
 	// Mouse look
 	delta := Input_Mouse_Delta(input)
@@ -150,6 +151,42 @@ Camera_FPS_Update :: proc(cam: ^Camera, input: ^Input, dt: f32, params: CameraFP
 	fwd   : f32 = 0
 	rgt   : f32 = 0
 	vert  : f32 = 0
+
+	if Input_Key_Down(input, KEY_W) do fwd  += speed * dt
+	if Input_Key_Down(input, KEY_S) do fwd  -= speed * dt
+	if Input_Key_Down(input, KEY_D) do rgt  += speed * dt
+	if Input_Key_Down(input, KEY_A) do rgt  -= speed * dt
+	if Input_Key_Down(input, KEY_E) do vert += speed * dt
+	if Input_Key_Down(input, KEY_Q) do vert -= speed * dt
+
+	Camera_Move_Local(cam, fwd, rgt, vert)
+}
+
+// Unity/Godot-style camera: only rotates and moves while right mouse button is held.
+// Locks the cursor on right-down, restores it on right-up.
+// Left-click and other interactions remain available when RMB is not held.
+Camera_FPS_Update_RMB :: proc(cam: ^Camera, input: ^Input, win: ^Window, dt: f32, params: CameraFPSParams = DEFAULT_FPS_PARAMS) {
+	rmbDown     := Input_Mouse_Down(input, MOUSE_RIGHT)
+	rmbPressed  := Input_Mouse_Pressed(input, MOUSE_RIGHT)
+	rmbReleased := Input_Mouse_Released(input, MOUSE_RIGHT)
+
+	// Lock cursor when RMB is first pressed, unlock when released.
+	if rmbPressed  do Input_Set_Cursor_Locked(input, win, true)
+	if rmbReleased do Input_Set_Cursor_Locked(input, win, false)
+
+	if !rmbDown do return
+
+	// Mouse look — only while held.
+	delta := Input_Mouse_Delta(input)
+	Camera_Rotate(cam, delta.x * params.mouseSensitivity, -delta.y * params.mouseSensitivity)
+
+	// Movement — only while held.
+	speed := params.moveSpeed
+	if Input_Key_Down(input, KEY_LEFT_SHIFT) do speed *= params.sprintMult
+
+	fwd  : f32 = 0
+	rgt  : f32 = 0
+	vert : f32 = 0
 
 	if Input_Key_Down(input, KEY_W) do fwd  += speed * dt
 	if Input_Key_Down(input, KEY_S) do fwd  -= speed * dt

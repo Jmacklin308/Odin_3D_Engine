@@ -140,6 +140,17 @@ World_Entity_Destroy :: proc(world: ^World, id: EntityID) {
 	append(&world.freeList, idx)
 }
 
+// Reconstructs the EntityID for a raw slot index using the current generation.
+// Useful for systems that iterate slot indices and need a comparable EntityID.
+World_Entity_ID :: proc(world: ^World, idx: u32) -> EntityID {
+	return _entity_make(idx, world.generations[idx])
+}
+
+// Returns the raw slot index encoded inside an EntityID.
+World_Entity_Index :: proc(id: EntityID) -> u32 {
+	return _entity_index(id)
+}
+
 // Returns true if id refers to a currently live entity.
 World_Entity_Valid :: proc(world: ^World, id: EntityID) -> bool {
 	if id == ENTITY_NULL do return false
