@@ -240,21 +240,9 @@ Renderer_Draw_Screen_Rect :: proc(renderer: ^Renderer, screenSize, min, max: eng
 	height := max.y - min.y
 	if width <= 0 || height <= 0 do return
 
-	gl.Disable(gl.DEPTH_TEST)
-	gl.Enable(gl.BLEND)
-	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
-	gl.Disable(gl.CULL_FACE)
-
-	Shader_Bind(&renderer.overlayShader)
-	Shader_Set_Vec2(&renderer.overlayShader, "uScreenSize", screenSize)
-	Shader_Set_Vec4(&renderer.overlayShader, "uRect", {min.x, min.y, width, height})
-	Shader_Set_Vec4(&renderer.overlayShader, "uColor", color)
-	Mesh_Draw(&renderer.overlayQuad)
-
-	gl.Disable(gl.BLEND)
-	gl.Enable(gl.CULL_FACE)
-	gl.Enable(gl.DEPTH_TEST)
-	Shader_Bind(&renderer.defaultShader)
+	_overlay_begin(renderer, screenSize)
+	_overlay_draw_rect(renderer, min, max, color)
+	_overlay_end(renderer)
 }
 
 // Draws a translucent marquee with a crisp border.
@@ -267,11 +255,40 @@ Renderer_Draw_Marquee :: proc(renderer: ^Renderer, screenSize, p0, p1: eng.Vec2)
 	fillColor   := eng.Vec4{1.0, 0.85, 0.0, 0.18}
 	borderColor := eng.Vec4{1.0, 0.92, 0.35, 0.95}
 
-	Renderer_Draw_Screen_Rect(renderer, screenSize, min, max, fillColor)
-	Renderer_Draw_Screen_Rect(renderer, screenSize, min, {max.x, min.y + border}, borderColor)
-	Renderer_Draw_Screen_Rect(renderer, screenSize, {min.x, max.y - border}, max, borderColor)
-	Renderer_Draw_Screen_Rect(renderer, screenSize, min, {min.x + border, max.y}, borderColor)
-	Renderer_Draw_Screen_Rect(renderer, screenSize, {max.x - border, min.y}, max, borderColor)
+	_overlay_begin(renderer, screenSize)
+	_overlay_draw_rect(renderer, min, max, fillColor)
+	_overlay_draw_rect(renderer, min, {max.x, min.y + border}, borderColor)
+	_overlay_draw_rect(renderer, {min.x, max.y - border}, max, borderColor)
+	_overlay_draw_rect(renderer, min, {min.x + border, max.y}, borderColor)
+	_overlay_draw_rect(renderer, {max.x - border, min.y}, max, borderColor)
+	_overlay_end(renderer)
+}
+
+_overlay_begin :: proc(renderer: ^Renderer, screenSize: eng.Vec2) {
+	gl.Disable(gl.DEPTH_TEST)
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+	gl.Disable(gl.CULL_FACE)
+
+	Shader_Bind(&renderer.overlayShader)
+	Shader_Set_Vec2(&renderer.overlayShader, "uScreenSize", screenSize)
+}
+
+_overlay_draw_rect :: proc(renderer: ^Renderer, min, max: eng.Vec2, color: eng.Vec4) {
+	width  := max.x - min.x
+	height := max.y - min.y
+	if width <= 0 || height <= 0 do return
+
+	Shader_Set_Vec4(&renderer.overlayShader, "uRect", {min.x, min.y, width, height})
+	Shader_Set_Vec4(&renderer.overlayShader, "uColor", color)
+	Mesh_Draw(&renderer.overlayQuad)
+}
+
+_overlay_end :: proc(renderer: ^Renderer) {
+	gl.Disable(gl.BLEND)
+	gl.Enable(gl.CULL_FACE)
+	gl.Enable(gl.DEPTH_TEST)
+	Shader_Bind(&renderer.defaultShader)
 }
 
 // =============================================================================

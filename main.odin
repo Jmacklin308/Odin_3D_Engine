@@ -30,6 +30,7 @@ main :: proc() {
 
 	if !eng.Init(cfg) do return
 	defer eng.Shutdown()
+	eng.Window_Set_Title(eng.Get_Window(), "Odin 3D Engine")
 
 	r: rend.Renderer
 	if !rend.Renderer_Init(&r) {
@@ -37,6 +38,7 @@ main :: proc() {
 		return
 	}
 	defer rend.Renderer_Shutdown(&r)
+	
 
 	gizmo: scene.Translate_Gizmo
 	if !scene.Translate_Gizmo_Init(&gizmo) {
@@ -100,12 +102,6 @@ main :: proc() {
 		eng.Begin_Frame()
 
 		fps := eng.Get_FPS()
-		title := fmt.ctprintf(
-			"3D Engine | %d entities | %d selected | FPS: %.0f | %.2f ms | [RMB] fly  [LMB] select/drag  [Shift+LMB] add",
-			world.count, selection.count, fps, 1000.0 / fps,
-		)
-
-		eng.Window_Set_Title(eng.Get_Window(), title)
 		dt  := eng.Get_Delta_Time()
 		inp := eng.Get_Input()
 		win := eng.Get_Window()
@@ -160,6 +156,15 @@ main :: proc() {
 		if marquee.dragging {
 			rend.Renderer_Draw_Marquee(&r, screenSize, marquee.start, marquee.current)
 		}
+		hudText := fmt.tprintf(
+			"ODIN 3D ENGINE\nENTITIES %d\nSELECTED %d\nFPS %.0f\nRMB FLY\nLMB SELECT DRAG\nSHIFT LMB ADD",
+			world.count, selection.count, fps,
+		)
+		hudPos := eng.Vec2{14, 14}
+		hudPad := eng.Vec2{8, 8}
+		hudSize := rend.Renderer_Measure_Debug_Text(hudText, 2.0)
+		rend.Renderer_Draw_Screen_Rect(&r, screenSize, hudPos - hudPad, hudPos + hudSize + hudPad, {0.03, 0.04, 0.06, 0.78})
+		rend.Renderer_Draw_Debug_Text(&r, screenSize, hudPos, hudText, 2.0, {0.95, 0.97, 1.0, 1.0})
 		rend.Renderer_End(&r)
 
 		eng.End_Frame()
