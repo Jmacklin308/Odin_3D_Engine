@@ -40,12 +40,12 @@ main :: proc() {
 	defer rend.Renderer_Shutdown(&r)
 	
 
-	gizmo: scene.Translate_Gizmo
-	if !scene.Translate_Gizmo_Init(&gizmo) {
-		fmt.eprintln("Failed to init translate gizmo.")
+	gizmo: scene.Transform_Gizmo
+	if !scene.Transform_Gizmo_Init(&gizmo) {
+		fmt.eprintln("Failed to init transform gizmo.")
 		return
 	}
-	defer scene.Translate_Gizmo_Shutdown(&gizmo)
+	defer scene.Transform_Gizmo_Shutdown(&gizmo)
 
 	cam := eng.Camera_Create({0, 80, 300}, 75)
 	eng.Camera_Look_At(&cam, {0, 0, 0})
@@ -74,7 +74,7 @@ main :: proc() {
 	}
 
 	// Spawn a grid of cubes.
-	GRID :: 40
+	GRID :: 100
 	SPACING :: 1.5
 	for row in 0 ..< GRID {
 		for col in 0 ..< GRID {
@@ -108,13 +108,23 @@ main :: proc() {
 
 		if eng.Input_Key_Pressed(inp, eng.KEY_ESCAPE) do eng.Quit()
 
-		eng.Camera_FPS_Update_RMB(&cam, inp, win, dt)
+		if !scene.Transform_Gizmo_Is_Dragging(&gizmo) {
+			eng.Camera_FPS_Update_RMB(&cam, inp, win, dt)
+		} else if inp.cursorLocked {
+			eng.Input_Set_Cursor_Locked(inp, win, false)
+		}
 
 		screenSize := eng.Vec2{f32(win.width), f32(win.height)}
 		additiveSelection := eng.Input_Key_Down(inp, eng.KEY_LEFT_SHIFT)
 
 		if !inp.cursorLocked {
-			gizmoCaptured := scene.Translate_Gizmo_Handle_Input(&gizmo, world, selection, inp, &cam, screenSize, win.aspect)
+			if eng.Input_Key_Pressed(inp, eng.KEY_W) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_TRANSLATE)
+			if eng.Input_Key_Pressed(inp, eng.KEY_E) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_ROTATE)
+			if eng.Input_Key_Pressed(inp, eng.KEY_R) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_SCALE)
+		}
+
+		if !inp.cursorLocked {
+			gizmoCaptured := scene.Transform_Gizmo_Handle_Input(&gizmo, world, selection, inp, &cam, screenSize, win.aspect)
 
 			if !gizmoCaptured {
 				if eng.Input_Mouse_Pressed(inp, eng.MOUSE_LEFT) {
@@ -151,14 +161,14 @@ main :: proc() {
 
 		rend.Renderer_Begin(&r, &cam, win.aspect)
 		scene.Scene_Render_System(world, selection)
-		scene.Translate_Gizmo_Draw(&gizmo, &r, world, selection, &cam, screenSize)
+		scene.Transform_Gizmo_Draw(&gizmo, &r, world, selection, &cam, screenSize)
 		rend.Renderer_Draw_Grid(&r)
 		if marquee.dragging {
 			rend.Renderer_Draw_Marquee(&r, screenSize, marquee.start, marquee.current)
 		}
 		hudText := fmt.tprintf(
-			"ODIN 3D ENGINE\nENTITIES %d\nSELECTED %d\nFPS %.0f\nRMB FLY\nLMB SELECT DRAG\nSHIFT LMB ADD",
-			world.count, selection.count, fps,
+			"ODIN 3D ENGINE\nENTITIES %d\nSELECTED %d\nFPS %.0f\nTOOL %s\nW MOVE  E ROTATE  R SCALE\nRMB FLY\nLMB SELECT DRAG\nSHIFT LMB ADD",
+			world.count, selection.count, fps, scene.Transform_Gizmo_Mode_Label(scene.Transform_Gizmo_Get_Mode(&gizmo)),
 		)
 		hudPos := eng.Vec2{14, 14}
 		hudPad := eng.Vec2{8, 8}
