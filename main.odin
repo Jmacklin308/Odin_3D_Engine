@@ -6,11 +6,8 @@ import scene "scene"
 import "core:fmt"
 import "core:mem"
 
-
-
-
 main :: proc() {
-	//for debugging!
+	// for debugging!
 	when ODIN_DEBUG {
 		track: mem.Tracking_Allocator
 		mem.tracking_allocator_init(&track, context.allocator)
@@ -25,11 +22,12 @@ main :: proc() {
 			mem.tracking_allocator_destroy(&track)
 		}
 	}
-// ------------------- Rest of Program ------------------- 
-	//load our config
+
+	// ------------------- Rest of Program -------------------
+	// load our config
 	cfg := eng.DEFAULT_CONFIG
 	cfg.debug.showGrid = true
-	
+
 	if !eng.Init(cfg) do return
 	defer eng.Shutdown()
 
@@ -40,9 +38,16 @@ main :: proc() {
 	}
 	defer rend.Renderer_Shutdown(&r)
 
+	gizmo: scene.Translate_Gizmo
+	if !scene.Translate_Gizmo_Init(&gizmo) {
+		fmt.eprintln("Failed to init translate gizmo.")
+		return
+	}
+	defer scene.Translate_Gizmo_Shutdown(&gizmo)
+
 	cam := eng.Camera_Create({0, 80, 300}, 75)
 	eng.Camera_Look_At(&cam, {0, 0, 0})
-	// Cursor starts unlocked — right-click to enter fly mode (Unity/Godot style).
+	// Cursor starts unlocked - right-click to enter fly mode.
 
 	cube, cubeOk := rend.Mesh_Create_Cube()
 	if !cubeOk {
@@ -66,8 +71,7 @@ main :: proc() {
 		return
 	}
 
-	// Spawn a 100×100 grid of cubes (10,000 entities).
-	// Each entity gets a Transform and a MeshRef.
+	// Spawn a grid of cubes.
 	GRID :: 40
 	SPACING :: 1.5
 	for row in 0 ..< GRID {
@@ -97,7 +101,7 @@ main :: proc() {
 
 		fps := eng.Get_FPS()
 		title := fmt.ctprintf(
-			"3D Engine | %d entities | %d selected | FPS: %.0f | %.2f ms | [RMB] fly  [LMB] select  [Shift+LMB] add",
+			"3D Engine | %d entities | %d selected | FPS: %.0f | %.2f ms | [RMB] fly  [LMB] select/drag  [Shift+LMB] add",
 			world.count, selection.count, fps, 1000.0 / fps,
 		)
 
@@ -108,56 +112,56 @@ main :: proc() {
 
 		if eng.Input_Key_Pressed(inp, eng.KEY_ESCAPE) do eng.Quit()
 
-		// Right-click fly mode (Unity/Godot style).
 		eng.Camera_FPS_Update_RMB(&cam, inp, win, dt)
 
 		screenSize := eng.Vec2{f32(win.width), f32(win.height)}
 		additiveSelection := eng.Input_Key_Down(inp, eng.KEY_LEFT_SHIFT)
 
-		// Left mouse supports both click-pick and drag marquee while the cursor is free.
 		if !inp.cursorLocked {
-			if eng.Input_Mouse_Pressed(inp, eng.MOUSE_LEFT) {
-				scene.Marquee_Begin(&marquee, inp.mousePos)
-			}
+			gizmoCaptured := scene.Translate_Gizmo_Handle_Input(&gizmo, world, selection, inp, &cam, screenSize, win.aspect)
 
-			if marquee.active && eng.Input_Mouse_Down(inp, eng.MOUSE_LEFT) {
-				scene.Marquee_Update(&marquee, inp.mousePos)
-			}
-
-			if marquee.active && eng.Input_Mouse_Released(inp, eng.MOUSE_LEFT) {
-				if marquee.dragging {
-					if !additiveSelection do scene.Selection_Clear(selection)
-					scene.Scene_Select_Marquee(world, selection, &marquee, screenSize, &cam, win.aspect)
-				} else {
-					origin, dir := scene.Scene_Ray_From_Screen(inp.mousePos, screenSize, &cam, win.aspect)
-					picked := scene.Scene_Pick(world, origin, dir)
-
-					if picked != scene.ENTITY_NULL {
-						if additiveSelection {
-							scene.Selection_Add_ID(selection, world, picked)
-						} else {
-							scene.Selection_Set_Single(selection, world, picked)
-						}
-					} else if !additiveSelection {
-						scene.Selection_Clear(selection)
-					}
+			if !gizmoCaptured {
+				if eng.Input_Mouse_Pressed(inp, eng.MOUSE_LEFT) {
+					scene.Marquee_Begin(&marquee, inp.mousePos)
 				}
 
-				scene.Marquee_End(&marquee)
+				if marquee.active && eng.Input_Mouse_Down(inp, eng.MOUSE_LEFT) {
+					scene.Marquee_Update(&marquee, inp.mousePos)
+				}
+
+				if marquee.active && eng.Input_Mouse_Released(inp, eng.MOUSE_LEFT) {
+					if marquee.dragging {
+						if !additiveSelection do scene.Selection_Clear(selection)
+						scene.Scene_Select_Marquee(world, selection, &marquee, screenSize, &cam, win.aspect)
+					} else {
+						origin, dir := scene.Scene_Ray_From_Screen(inp.mousePos, screenSize, &cam, win.aspect)
+						picked := scene.Scene_Pick(world, origin, dir)
+
+						if picked != scene.ENTITY_NULL {
+							if additiveSelection {
+								scene.Selection_Add_ID(selection, world, picked)
+							} else {
+								scene.Selection_Set_Single(selection, world, picked)
+							}
+						} else if !additiveSelection {
+							scene.Selection_Clear(selection)
+						}
+					}
+
+					scene.Marquee_End(&marquee)
+				}
 			}
 		}
 
 		rend.Renderer_Begin(&r, &cam, win.aspect)
-
-		// Draw all ECS entities — selected one is tinted yellow.
 		scene.Scene_Render_System(world, selection)
-
+		scene.Translate_Gizmo_Draw(&gizmo, &r, world, selection, &cam, screenSize)
 		rend.Renderer_Draw_Grid(&r)
 		if marquee.dragging {
 			rend.Renderer_Draw_Marquee(&r, screenSize, marquee.start, marquee.current)
 		}
-
 		rend.Renderer_End(&r)
+
 		eng.End_Frame()
 	}
 }
