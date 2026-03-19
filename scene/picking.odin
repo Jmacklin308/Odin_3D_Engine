@@ -82,27 +82,31 @@ _ray_aabb :: proc(origin, dir, aabbMin, aabbMax: eng.Vec3) -> (hit: bool, t: f32
 // Only tests entities that have both COMP_TRANSFORM and COMP_MESH_REF.
 // Returns ENTITY_NULL if nothing is hit.
 Scene_Pick :: proc(world: ^World, origin, dir: eng.Vec3) -> EntityID {
-	required := COMP_TRANSFORM | COMP_MESH_REF
+	id, _, _ := Scene_Pick_Point(world, origin, dir)
+	return id
+}
 
-	bestID  := ENTITY_NULL
-	bestT   : f32 = 3.402823466e+38 // max f32
+// Like Scene_Pick but also returns the world-space hit point and an ok flag.
+// hitPoint is only valid when ok is true.
+Scene_Pick_Point :: proc(world: ^World, origin, dir: eng.Vec3) -> (id: EntityID, hitPoint: eng.Vec3, ok: bool) {
+	required := COMP_TRANSFORM | COMP_MESH_REF
+	bestT: f32 = 3.402823466e+38 // max f32
 
 	for i in 0 ..< world.count {
 		if world.generations[i] == 0 do continue
 		if world.masks[i] & required != required do continue
 
-		t := world.transforms[i]
-		// Axis-aligned bounding box centered at position, half-extents = scale*0.5
+		t    := world.transforms[i]
 		half := eng.Vec3{t.scale.x * 0.5, t.scale.y * 0.5, t.scale.z * 0.5}
-		aabbMin := t.position - half
-		aabbMax := t.position + half
 
-		hit, dist := _ray_aabb(origin, dir, aabbMin, aabbMax)
+		hit, dist := _ray_aabb(origin, dir, t.position - half, t.position + half)
 		if hit && dist < bestT {
-			bestT  = dist
-			bestID = World_Entity_ID(world, u32(i))
+			bestT = dist
+			id    = World_Entity_ID(world, u32(i))
+			ok    = true
 		}
 	}
 
-	return bestID
+	if ok do hitPoint = origin + dir * bestT
+	return
 }

@@ -43,6 +43,12 @@ renderer/   → package renderer  (import as: import rend "renderer")
 - No global mutable state outside `engine/engine.odin`
 - Keep `main.odin` thin — it is a wiring file, not a logic file
 
+## Units
+- **1 engine unit = 1 meter** (convention only — nothing enforces this)
+- No physics, audio, or networking currently depend on this scale
+- If a physics library is added later (e.g. Jolt), it will expect SI units — this convention means no scale conversion will be needed
+- Do not add a `METERS_PER_UNIT` constant unless something actually uses it
+
 ## What NOT to Do
 - Do not add external dependencies beyond `vendor:` packages already in use
 - Do not add a build system (Makefile, etc.) unless asked

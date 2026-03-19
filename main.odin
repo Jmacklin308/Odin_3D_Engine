@@ -114,6 +114,8 @@ main :: proc() {
 	history: scene.Undo_History
 	defer scene.Undo_History_Destroy(&history)
 
+	clipboard: scene.Clipboard
+
 	marquee: scene.Marquee_Selection
 
 	for eng.Running() {
@@ -172,10 +174,19 @@ main :: proc() {
 				scene.Scene_Load(world, "scene.o3ds", _mesh_resolver)
 			}
 			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_Z) {
-				scene.Undo_Apply(&history, world)
+				scene.Undo_Apply(&history, world, selection)
 			}
 			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_Y) {
-				scene.Undo_Redo(&history, world)
+				scene.Undo_Redo(&history, world, selection)
+			}
+			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_C) {
+				scene.Clipboard_Copy(world, selection, &clipboard)
+			}
+			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_V) {
+				pasteOrigin, pasteDir := scene.Scene_Ray_From_Screen(inp.mousePos, screenSize, &cam, win.aspect)
+				if ids, snap, ok := scene.Clipboard_Paste(world, selection, &clipboard, pasteOrigin, pasteDir); ok {
+					scene.Undo_Paste_Commit(&history, ids, snap)
+				}
 			}
 		}
 
@@ -226,7 +237,7 @@ main :: proc() {
 			rend.Renderer_Draw_Marquee(&r, screenSize, marquee.start, marquee.current)
 		}
 		hudText := fmt.tprintf(
-			"ODIN 3D ENGINE\nENTITIES %d\nSELECTED %d\nFPS %.0f\nTOOL %s\nW MOVE  E ROTATE  R SCALE\nF FOCUS\nRMB FLY\nLMB SELECT DRAG\nSHIFT LMB ADD\nCTRL+Z UNDO  CTRL+Y REDO",
+			"ODIN 3D ENGINE\nENTITIES %d\nSELECTED %d\nFPS %.0f\nTOOL %s\nW MOVE  E ROTATE  R SCALE\nF FOCUS\nRMB FLY\nLMB SELECT DRAG\nSHIFT LMB ADD\nCTRL+Z UNDO  CTRL+Y REDO\nCTRL+C COPY  CTRL+V PASTE",
 			world.count, selection.count, fps, scene.Transform_Gizmo_Mode_Label(scene.Transform_Gizmo_Get_Mode(&gizmo)),
 		)
 		hudPos := eng.Vec2{14, 14}
