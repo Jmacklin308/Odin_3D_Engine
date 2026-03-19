@@ -151,13 +151,13 @@ Transform_Gizmo_Handle_Input :: proc(
 	cam:        ^eng.Camera,
 	screenSize: eng.Vec2,
 	aspect:     f32,
-) -> bool {
-	if !gizmo.ready || selection == nil do return false
+) -> (captured: bool, committed: bool) {
+	if !gizmo.ready || selection == nil do return false, false
 
 	pivot, hasSelection := _gizmo_selection_center(world, selection)
 	if !hasSelection {
 		_gizmo_cancel_drag(gizmo)
-		return false
+		return false, false
 	}
 
 	gizmoScale := _gizmo_world_scale(pivot, cam, screenSize)
@@ -173,23 +173,24 @@ Transform_Gizmo_Handle_Input :: proc(
 		}
 
 		if eng.Input_Mouse_Released(input, eng.MOUSE_LEFT) || !eng.Input_Mouse_Down(input, eng.MOUSE_LEFT) {
-			gizmo.dragging       = false
-			gizmo.activeHandle   = GIZMO_HANDLE_NONE
-			gizmo.hoveredHandle  = GIZMO_HANDLE_NONE
+			gizmo.dragging         = false
+			gizmo.activeHandle     = GIZMO_HANDLE_NONE
+			gizmo.hoveredHandle    = GIZMO_HANDLE_NONE
 			gizmo.rotateAccumAngle = 0
+			return true, true // drag just ended — caller should commit to undo history
 		}
-		return true
+		return true, false
 	}
 
 	gizmo.hoveredHandle = _gizmo_hit_test(gizmo.mode, pivot, gizmoScale, input.mousePos, cam, screenSize, aspect)
 
 	if eng.Input_Mouse_Pressed(input, eng.MOUSE_LEFT) && gizmo.hoveredHandle != GIZMO_HANDLE_NONE {
 		if _gizmo_begin_drag(gizmo, world, selection, gizmo.hoveredHandle, pivot, gizmoScale, input.mousePos, screenSize, cam, aspect) {
-			return true
+			return true, false
 		}
 	}
 
-	return false
+	return false, false
 }
 
 Transform_Gizmo_Draw :: proc(

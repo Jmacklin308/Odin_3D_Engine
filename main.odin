@@ -109,6 +109,9 @@ main :: proc() {
 	selection := new(scene.Selection_Set)
 	defer free(selection)
 
+	history: scene.Undo_History
+	defer scene.Undo_History_Destroy(&history)
+
 	marquee: scene.Marquee_Selection
 
 	for eng.Running() {
@@ -142,10 +145,19 @@ main :: proc() {
 			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_O) {
 				scene.Scene_Load(world, "scene.o3ds", _mesh_resolver)
 			}
+			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_Z) {
+				scene.Undo_Apply(&history, world)
+			}
+			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_Y) {
+				scene.Undo_Redo(&history, world)
+			}
 		}
 
 		if !inp.cursorLocked {
-			gizmoCaptured := scene.Transform_Gizmo_Handle_Input(&gizmo, world, selection, inp, &cam, screenSize, win.aspect)
+			gizmoCaptured, gizmoCommitted := scene.Transform_Gizmo_Handle_Input(&gizmo, world, selection, inp, &cam, screenSize, win.aspect)
+			if gizmoCommitted {
+				scene.Undo_Gizmo_Commit(&history, &gizmo, world)
+			}
 
 			if !gizmoCaptured {
 				if eng.Input_Mouse_Pressed(inp, eng.MOUSE_LEFT) {
@@ -188,7 +200,7 @@ main :: proc() {
 			rend.Renderer_Draw_Marquee(&r, screenSize, marquee.start, marquee.current)
 		}
 		hudText := fmt.tprintf(
-			"ODIN 3D ENGINE\nENTITIES %d\nSELECTED %d\nFPS %.0f\nTOOL %s\nW MOVE  E ROTATE  R SCALE\nRMB FLY\nLMB SELECT DRAG\nSHIFT LMB ADD",
+			"ODIN 3D ENGINE\nENTITIES %d\nSELECTED %d\nFPS %.0f\nTOOL %s\nW MOVE  E ROTATE  R SCALE\nRMB FLY\nLMB SELECT DRAG\nSHIFT LMB ADD\nCTRL+Z UNDO  CTRL+Y REDO",
 			world.count, selection.count, fps, scene.Transform_Gizmo_Mode_Label(scene.Transform_Gizmo_Get_Mode(&gizmo)),
 		)
 		hudPos := eng.Vec2{14, 14}
