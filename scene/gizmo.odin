@@ -30,6 +30,9 @@ GIZMO_HANDLE_SCALE_X       :: Gizmo_Handle(7)
 GIZMO_HANDLE_SCALE_Y       :: Gizmo_Handle(8)
 GIZMO_HANDLE_SCALE_Z       :: Gizmo_Handle(9)
 GIZMO_HANDLE_SCALE_UNIFORM :: Gizmo_Handle(10)
+GIZMO_HANDLE_TRANSLATE_XY  :: Gizmo_Handle(11) // drag in XY plane (Z is excluded)
+GIZMO_HANDLE_TRANSLATE_XZ  :: Gizmo_Handle(12) // drag in XZ plane (Y is excluded)
+GIZMO_HANDLE_TRANSLATE_YZ  :: Gizmo_Handle(13) // drag in YZ plane (X is excluded)
 
 GIZMO_PIXEL_LENGTH          :: f32(96.0)
 GIZMO_HIT_RADIUS_PIXELS     :: f32(10.0)
@@ -43,6 +46,11 @@ GIZMO_TRANSLATE_SHAFT_RADIUS :: f32(0.045)
 GIZMO_TRANSLATE_HEAD_LENGTH  :: f32(0.20)
 GIZMO_TRANSLATE_HEAD_RADIUS  :: f32(0.11)
 GIZMO_TRANSLATE_TOTAL_LENGTH :: f32(GIZMO_TRANSLATE_SHAFT_START + GIZMO_TRANSLATE_SHAFT_LENGTH + GIZMO_TRANSLATE_HEAD_LENGTH)
+
+GIZMO_TRANSLATE_PLANE_OFFSET    :: f32(0.26)  // distance from origin along each of the two axes
+GIZMO_TRANSLATE_PLANE_SIZE      :: f32(0.22)  // visual side length of the square
+GIZMO_TRANSLATE_PLANE_THICKNESS :: f32(0.03)  // visual depth of the flat quad
+GIZMO_TRANSLATE_PLANE_HIT_SIZE  :: f32(0.28)  // hit-test half-extent (slightly larger than visual)
 
 GIZMO_ROTATE_RADIUS      :: f32(1.02)
 GIZMO_ROTATE_THICKNESS   :: f32(0.04)
@@ -83,6 +91,7 @@ Transform_Gizmo :: struct {
 	dragPlaneNormal:     eng.Vec3,
 	dragPivotStart:      eng.Vec3,
 	dragStartAxisOffset: f32,
+	dragPlaneHitStart:   eng.Vec3, // world-space hit position when a plane handle drag begins
 
 	dragStartMousePos: eng.Vec2,
 	dragPrevMousePos:  eng.Vec2,
@@ -261,7 +270,12 @@ _gizmo_begin_drag :: proc(
 
 	switch _gizmo_handle_mode(handle) {
 	case GIZMO_MODE_TRANSLATE:
-		return _gizmo_begin_translate_drag(gizmo, _gizmo_handle_axis(handle), pivot, mousePos, screenSize, cam, aspect)
+		switch handle {
+		case GIZMO_HANDLE_TRANSLATE_XY, GIZMO_HANDLE_TRANSLATE_XZ, GIZMO_HANDLE_TRANSLATE_YZ:
+			return _gizmo_begin_plane_translate_drag(gizmo, handle, pivot, mousePos, screenSize, cam, aspect)
+		case:
+			return _gizmo_begin_translate_drag(gizmo, _gizmo_handle_axis(handle), pivot, mousePos, screenSize, cam, aspect)
+		}
 	case GIZMO_MODE_ROTATE:
 		return _gizmo_begin_rotate_drag(gizmo, _gizmo_handle_axis(handle), pivot, mousePos, screenSize, cam, aspect)
 	case GIZMO_MODE_SCALE:
@@ -329,6 +343,29 @@ _gizmo_begin_translate_drag :: proc(
 
 	gizmo.dragPlaneNormal     = planeNormal
 	gizmo.dragStartAxisOffset = eng.Vec3_Dot(hitPos - pivot, axisDir)
+	return true
+}
+
+@(private)
+_gizmo_begin_plane_translate_drag :: proc(
+	gizmo:      ^Transform_Gizmo,
+	handle:     Gizmo_Handle,
+	pivot:      eng.Vec3,
+	mousePos:   eng.Vec2,
+	screenSize: eng.Vec2,
+	cam:        ^eng.Camera,
+	aspect:     f32,
+) -> bool {
+	normalAxis := _gizmo_handle_plane_normal_axis(handle)
+	if normalAxis == GIZMO_AXIS_NONE do return false
+
+	normalDir := _gizmo_axis_dir(normalAxis)
+	rayOrigin, rayDir := Scene_Ray_From_Screen(mousePos, screenSize, cam, aspect)
+	hitPos, hit := _ray_plane_intersection(rayOrigin, rayDir, pivot, normalDir)
+	if !hit do return false
+
+	gizmo.dragPlaneNormal   = normalDir
+	gizmo.dragPlaneHitStart = hitPos
 	return true
 }
 
@@ -423,16 +460,23 @@ _gizmo_apply_translate_drag :: proc(
 	cam:        ^eng.Camera,
 	aspect:     f32,
 ) {
-	axis := _gizmo_handle_axis(gizmo.activeHandle)
-	if axis == GIZMO_AXIS_NONE do return
-
-	axisDir := _gizmo_axis_dir(axis)
 	rayOrigin, rayDir := Scene_Ray_From_Screen(mousePos, screenSize, cam, aspect)
 	hitPos, hit := _ray_plane_intersection(rayOrigin, rayDir, gizmo.dragPivot, gizmo.dragPlaneNormal)
 	if !hit do return
 
-	axisOffset := eng.Vec3_Dot(hitPos - gizmo.dragPivot, axisDir) - gizmo.dragStartAxisOffset
-	delta := axisDir * axisOffset
+	delta: eng.Vec3
+	switch gizmo.activeHandle {
+	case GIZMO_HANDLE_TRANSLATE_XY, GIZMO_HANDLE_TRANSLATE_XZ, GIZMO_HANDLE_TRANSLATE_YZ:
+		// Plane drag: full 2D delta within the drag plane
+		delta = hitPos - gizmo.dragPlaneHitStart
+	case:
+		// Single-axis drag: project onto the constrained axis only
+		axis := _gizmo_handle_axis(gizmo.activeHandle)
+		if axis == GIZMO_AXIS_NONE do return
+		axisDir := _gizmo_axis_dir(axis)
+		axisOffset := eng.Vec3_Dot(hitPos - gizmo.dragPivot, axisDir) - gizmo.dragStartAxisOffset
+		delta = axisDir * axisOffset
+	}
 
 	for entry in gizmo.dragEntries {
 		transform, ok := World_Get_Transform(world, entry.id)
@@ -493,6 +537,10 @@ _gizmo_apply_rotate_drag :: proc(
 		transform, ok := World_Get_Transform(world, entry.id)
 		if !ok do continue
 		transform.rotation = eng.Quat_Normalize(rotDelta * entry.startRot)
+		
+		// To maintain the pivot point under the mouse cursor, we need to rotate the offset from the pivot to the entity's position.
+		offset := entry.startPos - gizmo.dragPivot
+		transform.position = gizmo.dragPivot + eng.Quat_Rotate_Vec3(rotDelta, offset)
 	}
 
 	gizmo.dragPrevMousePos = mousePos
@@ -563,14 +611,40 @@ _gizmo_hit_test :: proc(
 
 	switch mode {
 	case GIZMO_MODE_TRANSLATE:
-		handles := [3]Gizmo_Handle{GIZMO_HANDLE_TRANSLATE_X, GIZMO_HANDLE_TRANSLATE_Y, GIZMO_HANDLE_TRANSLATE_Z}
-		for handle in handles {
+		axisHandles := [3]Gizmo_Handle{GIZMO_HANDLE_TRANSLATE_X, GIZMO_HANDLE_TRANSLATE_Y, GIZMO_HANDLE_TRANSLATE_Z}
+		for handle in axisHandles {
 			axis := _gizmo_handle_axis(handle)
 			axisDir := _gizmo_axis_dir(axis)
 			startWorld := gizmoPos + axisDir * (GIZMO_TRANSLATE_SHAFT_START * gizmoScale)
 			endWorld   := gizmoPos + axisDir * (GIZMO_TRANSLATE_TOTAL_LENGTH * gizmoScale)
 			hit, hitT := _ray_vs_cylinder_segment(rayOrigin, rayDir, startWorld, endWorld, math.max(hitRadiusWorld, GIZMO_TRANSLATE_SHAFT_RADIUS * gizmoScale))
 			if hit && hitT < bestT {
+				bestT      = hitT
+				bestHandle = handle
+			}
+		}
+
+		planeHandles := [3]Gizmo_Handle{GIZMO_HANDLE_TRANSLATE_XY, GIZMO_HANDLE_TRANSLATE_XZ, GIZMO_HANDLE_TRANSLATE_YZ}
+		for handle in planeHandles {
+			normalAxis := _gizmo_handle_plane_normal_axis(handle)
+			axis1, axis2 := _gizmo_handle_plane_axes(handle)
+			normalDir := _gizmo_axis_dir(normalAxis)
+			dir1      := _gizmo_axis_dir(axis1)
+			dir2      := _gizmo_axis_dir(axis2)
+
+			center := gizmoPos + dir1 * (GIZMO_TRANSLATE_PLANE_OFFSET * gizmoScale) + dir2 * (GIZMO_TRANSLATE_PLANE_OFFSET * gizmoScale)
+
+			denom := eng.Vec3_Dot(normalDir, rayDir)
+			if math.abs(denom) <= GIZMO_EPSILON do continue
+			hitT := eng.Vec3_Dot(center - rayOrigin, normalDir) / denom
+			if hitT < 0 do continue
+
+			hitPos := rayOrigin + rayDir * hitT
+			rel := hitPos - center
+			d1 := math.abs(eng.Vec3_Dot(rel, dir1))
+			d2 := math.abs(eng.Vec3_Dot(rel, dir2))
+			halfHit := GIZMO_TRANSLATE_PLANE_HIT_SIZE * 0.5 * gizmoScale
+			if d1 <= halfHit && d2 <= halfHit && hitT < bestT {
 				bestT      = hitT
 				bestHandle = handle
 			}
@@ -627,9 +701,8 @@ _gizmo_hit_test :: proc(
 
 @(private)
 _gizmo_draw_translate :: proc(gizmo: ^Transform_Gizmo, renderer: ^rend.Renderer, origin: eng.Vec3, gizmoScale: f32) {
-	handles := [3]Gizmo_Handle{GIZMO_HANDLE_TRANSLATE_X, GIZMO_HANDLE_TRANSLATE_Y, GIZMO_HANDLE_TRANSLATE_Z}
-
-	for handle in handles {
+	axisHandles := [3]Gizmo_Handle{GIZMO_HANDLE_TRANSLATE_X, GIZMO_HANDLE_TRANSLATE_Y, GIZMO_HANDLE_TRANSLATE_Z}
+	for handle in axisHandles {
 		axis := _gizmo_handle_axis(handle)
 		axisDir := _gizmo_axis_dir(axis)
 		color := _gizmo_handle_color(gizmo, handle)
@@ -642,6 +715,23 @@ _gizmo_draw_translate :: proc(gizmo: ^Transform_Gizmo, renderer: ^rend.Renderer,
 
 		rend.Renderer_Draw_Mesh(renderer, &gizmo.mesh, shaftModel, color)
 		rend.Renderer_Draw_Mesh(renderer, &gizmo.mesh, headModel, color)
+	}
+
+	// Plane drag squares: small flat quads between each pair of axes
+	planeHandles := [3]Gizmo_Handle{GIZMO_HANDLE_TRANSLATE_XY, GIZMO_HANDLE_TRANSLATE_XZ, GIZMO_HANDLE_TRANSLATE_YZ}
+	size      := GIZMO_TRANSLATE_PLANE_SIZE      * gizmoScale
+	thickness := GIZMO_TRANSLATE_PLANE_THICKNESS * gizmoScale
+	for handle in planeHandles {
+		normalAxis := _gizmo_handle_plane_normal_axis(handle)
+		axis1, axis2 := _gizmo_handle_plane_axes(handle)
+		normalDir := _gizmo_axis_dir(normalAxis)
+		dir1      := _gizmo_axis_dir(axis1)
+		dir2      := _gizmo_axis_dir(axis2)
+		color     := _gizmo_handle_color(gizmo, handle)
+
+		center := origin + dir1 * (GIZMO_TRANSLATE_PLANE_OFFSET * gizmoScale) + dir2 * (GIZMO_TRANSLATE_PLANE_OFFSET * gizmoScale)
+		model  := _gizmo_basis_model(center, dir1, normalDir, dir2, {size, thickness, size})
+		rend.Renderer_Draw_Mesh(renderer, &gizmo.mesh, model, color)
 	}
 }
 
@@ -749,8 +839,14 @@ _gizmo_draw_rotate_indicator :: proc(gizmo: ^Transform_Gizmo, renderer: ^rend.Re
 
 @(private)
 _gizmo_handle_color :: proc(gizmo: ^Transform_Gizmo, handle: Gizmo_Handle) -> eng.Vec3 {
-	color := eng.Vec3{0.86, 0.86, 0.9}
-	if handle != GIZMO_HANDLE_SCALE_UNIFORM {
+	color: eng.Vec3
+	switch handle {
+	case GIZMO_HANDLE_SCALE_UNIFORM:
+		color = {0.86, 0.86, 0.9}
+	case GIZMO_HANDLE_TRANSLATE_XY, GIZMO_HANDLE_TRANSLATE_XZ, GIZMO_HANDLE_TRANSLATE_YZ:
+		// Color by the excluded (normal) axis: XY→blue, XZ→green, YZ→red
+		color = _gizmo_axis_color(_gizmo_handle_plane_normal_axis(handle))
+	case:
 		color = _gizmo_axis_color(_gizmo_handle_axis(handle))
 	}
 
@@ -883,7 +979,8 @@ _gizmo_handle_axis :: proc(handle: Gizmo_Handle) -> Gizmo_Axis {
 @(private)
 _gizmo_handle_mode :: proc(handle: Gizmo_Handle) -> Gizmo_Mode {
 	switch handle {
-	case GIZMO_HANDLE_TRANSLATE_X, GIZMO_HANDLE_TRANSLATE_Y, GIZMO_HANDLE_TRANSLATE_Z:
+	case GIZMO_HANDLE_TRANSLATE_X, GIZMO_HANDLE_TRANSLATE_Y, GIZMO_HANDLE_TRANSLATE_Z,
+	     GIZMO_HANDLE_TRANSLATE_XY, GIZMO_HANDLE_TRANSLATE_XZ, GIZMO_HANDLE_TRANSLATE_YZ:
 		return GIZMO_MODE_TRANSLATE
 	case GIZMO_HANDLE_ROTATE_X, GIZMO_HANDLE_ROTATE_Y, GIZMO_HANDLE_ROTATE_Z:
 		return GIZMO_MODE_ROTATE
@@ -891,6 +988,26 @@ _gizmo_handle_mode :: proc(handle: Gizmo_Handle) -> Gizmo_Mode {
 		return GIZMO_MODE_SCALE
 	case:
 		return GIZMO_MODE_TRANSLATE
+	}
+}
+
+@(private)
+_gizmo_handle_plane_normal_axis :: proc(handle: Gizmo_Handle) -> Gizmo_Axis {
+	switch handle {
+	case GIZMO_HANDLE_TRANSLATE_XY: return GIZMO_AXIS_Z
+	case GIZMO_HANDLE_TRANSLATE_XZ: return GIZMO_AXIS_Y
+	case GIZMO_HANDLE_TRANSLATE_YZ: return GIZMO_AXIS_X
+	case: return GIZMO_AXIS_NONE
+	}
+}
+
+@(private)
+_gizmo_handle_plane_axes :: proc(handle: Gizmo_Handle) -> (Gizmo_Axis, Gizmo_Axis) {
+	switch handle {
+	case GIZMO_HANDLE_TRANSLATE_XY: return GIZMO_AXIS_X, GIZMO_AXIS_Y
+	case GIZMO_HANDLE_TRANSLATE_XZ: return GIZMO_AXIS_X, GIZMO_AXIS_Z
+	case GIZMO_HANDLE_TRANSLATE_YZ: return GIZMO_AXIS_Y, GIZMO_AXIS_Z
+	case: return GIZMO_AXIS_NONE, GIZMO_AXIS_NONE
 	}
 }
 
