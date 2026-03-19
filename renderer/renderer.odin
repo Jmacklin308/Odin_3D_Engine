@@ -223,6 +223,16 @@ Renderer_Use_Default_Shader :: proc(renderer: ^Renderer) {
 	Shader_Bind(&renderer.defaultShader)
 }
 
+// Enables or disables depth testing for subsequent draw calls.
+// Remember to restore it when done (pass true to re-enable).
+Renderer_Set_Depth_Test :: proc(enabled: bool) {
+	if enabled {
+		gl.Enable(gl.DEPTH_TEST)
+	} else {
+		gl.Disable(gl.DEPTH_TEST)
+	}
+}
+
 // Draw a batch of instances in a single draw call.
 // Binds the instancing shader, uploads instance data, draws, then restores the default shader.
 // Call between Renderer_Begin and Renderer_End.

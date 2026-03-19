@@ -218,6 +218,7 @@ Transform_Gizmo_Draw :: proc(
 	gizmoScale := _gizmo_world_scale(pivot, cam, screenSize)
 
 	rend.Renderer_Use_Default_Shader(renderer)
+	rend.Renderer_Set_Depth_Test(false)
 	switch gizmo.mode {
 	case GIZMO_MODE_TRANSLATE:
 		_gizmo_draw_translate(gizmo, renderer, pivot, gizmoScale)
@@ -226,6 +227,7 @@ Transform_Gizmo_Draw :: proc(
 	case GIZMO_MODE_SCALE:
 		_gizmo_draw_scale(gizmo, renderer, pivot, gizmoScale)
 	}
+	rend.Renderer_Set_Depth_Test(true)
 }
 
 Translate_Gizmo :: Transform_Gizmo
