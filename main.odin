@@ -6,6 +6,18 @@ import scene "scene"
 import "core:fmt"
 import "core:mem"
 
+// Package-level pointer so _mesh_resolver can reference it without a closure.
+@(private)
+_cube_mesh: ^rend.Mesh
+
+@(private)
+_mesh_resolver :: proc(name: string) -> (^rend.Mesh, bool) {
+	switch name {
+	case "cube": return _cube_mesh, _cube_mesh != nil
+	}
+	return nil, false
+}
+
 main :: proc() {
 	// for debugging!
 	when ODIN_DEBUG {
@@ -57,6 +69,7 @@ main :: proc() {
 		return
 	}
 	defer rend.Mesh_Destroy(&cube)
+	_cube_mesh = &cube
 
 	// --- Scene / ECS setup ---
 	// World is ~10 MB; allocate on the heap to avoid stack overflow.
@@ -67,7 +80,7 @@ main :: proc() {
 		free(world)
 	}
 
-	cubeKey, keyOk := scene.World_Register_Mesh(world, &cube)
+	cubeKey, keyOk := scene.World_Register_Mesh(world, &cube, "cube")
 	if !keyOk {
 		fmt.eprintln("Failed to register cube mesh with scene.")
 		return
@@ -121,6 +134,14 @@ main :: proc() {
 			if eng.Input_Key_Pressed(inp, eng.KEY_W) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_TRANSLATE)
 			if eng.Input_Key_Pressed(inp, eng.KEY_E) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_ROTATE)
 			if eng.Input_Key_Pressed(inp, eng.KEY_R) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_SCALE)
+
+			ctrlDown := eng.Input_Key_Down(inp, eng.KEY_LEFT_CONTROL)
+			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_S) {
+				scene.Scene_Save(world, "scene.o3ds")
+			}
+			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_O) {
+				scene.Scene_Load(world, "scene.o3ds", _mesh_resolver)
+			}
 		}
 
 		if !inp.cursorLocked {

@@ -1,6 +1,7 @@
 package scene
 
 import "core:fmt"
+import "core:mem"
 import eng "../engine"
 import rend "../renderer"
 
@@ -71,6 +72,8 @@ World :: struct {
 	// Register meshes with World_Register_Mesh; get back a meshKey for MeshRef.
 	meshRegistry:      [MESH_REGISTRY_MAX]^rend.Mesh,
 	meshRegistryCount: int,
+	meshNames:         [MESH_REGISTRY_MAX][64]u8, // null-terminated name per slot
+	meshNameLens:      [MESH_REGISTRY_MAX]int,    // byte length of each name
 
 	// --- Render batch cache (internal, rebuilt each frame) ---
 	// Fixed array indexed by meshKey-1; avoids map hashing in the hot path.
@@ -99,7 +102,8 @@ World_Shutdown :: proc(world: ^World) {
 
 // Register a mesh for use with MeshRef components.
 // Enables GPU instancing on the mesh.  Returns a meshKey (1-based) for use in MeshRef.
-World_Register_Mesh :: proc(world: ^World, mesh: ^rend.Mesh) -> (key: u32, ok: bool) {
+// name is stored for serialization; auto-generated as "mesh_N" if empty.
+World_Register_Mesh :: proc(world: ^World, mesh: ^rend.Mesh, name: string = "") -> (key: u32, ok: bool) {
 	if world.meshRegistryCount >= MESH_REGISTRY_MAX {
 		fmt.eprintln("[Scene] Mesh registry full — increase MESH_REGISTRY_MAX.")
 		return 0, false
@@ -110,6 +114,12 @@ World_Register_Mesh :: proc(world: ^World, mesh: ^rend.Mesh) -> (key: u32, ok: b
 	}
 	key = u32(world.meshRegistryCount + 1) // 1-based; 0 is reserved for "none"
 	world.meshRegistry[world.meshRegistryCount] = mesh
+	// Store name for serialization
+	effectiveName := name if len(name) > 0 else fmt.tprintf("mesh_%d", key)
+	copyLen := min(len(effectiveName), 63)
+	idx := world.meshRegistryCount
+	mem.copy(&world.meshNames[idx][0], raw_data(effectiveName), copyLen)
+	world.meshNameLens[idx] = copyLen
 	world.meshRegistryCount += 1
 	return key, true
 }

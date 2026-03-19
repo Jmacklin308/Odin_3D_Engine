@@ -4,6 +4,7 @@
 ```bash
 odin run . -file           # run main.odin directly
 odin build . -out:engine   # build executable
+odin build . -out:engine -debug  # build executable -debug
 ```
 No build system — just `odin run .` from the project root.
 
