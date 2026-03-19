@@ -137,6 +137,41 @@ Scene_Select_Marquee :: proc(
 	return selectedCount
 }
 
+// Returns the world-space center and bounding radius of the current selection.
+// The radius is the maximum distance from the center to any selected entity,
+// plus that entity's own half-extent (based on scale), so the camera can frame
+// the entire selection comfortably.
+Selection_Get_Focus_Bounds :: proc(world: ^World, selection: ^Selection_Set) -> (center: eng.Vec3, radius: f32, ok: bool) {
+	if selection == nil || selection.count == 0 do return {}, 0, false
+
+	required := COMP_TRANSFORM
+
+	// Pass 1: compute centroid.
+	count := 0
+	for i in 0 ..< world.count {
+		if world.generations[i] == 0 do continue
+		if world.masks[i] & required != required do continue
+		if !Selection_Contains_Index(selection, world, u32(i)) do continue
+		center += world.transforms[i].position
+		count += 1
+	}
+	if count == 0 do return {}, 0, false
+	center /= f32(count)
+
+	// Pass 2: find the bounding radius.
+	for i in 0 ..< world.count {
+		if world.generations[i] == 0 do continue
+		if world.masks[i] & required != required do continue
+		if !Selection_Contains_Index(selection, world, u32(i)) do continue
+		t := world.transforms[i]
+		extent := eng.Vec3_Length(t.scale) * 0.5 // half-diagonal of the entity AABB
+		dist   := eng.Vec3_Distance(t.position, center) + extent
+		if dist > radius do radius = dist
+	}
+
+	return center, radius, true
+}
+
 @(private)
 _world_to_screen :: proc(worldPos: eng.Vec3, viewProj: eng.Mat4, screenSize: eng.Vec2) -> (screenPos: eng.Vec2, visible: bool) {
 	clip := viewProj * eng.Vec4{worldPos.x, worldPos.y, worldPos.z, 1.0}

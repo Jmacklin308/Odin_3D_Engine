@@ -199,6 +199,109 @@ Camera_FPS_Update_RMB :: proc(cam: ^Camera, input: ^Input, win: ^Window, dt: f32
 }
 
 // =============================================================================
+// Focus Animation
+//
+// Smoothly flies the camera to frame a world-space target sphere.
+// Typical use: press F in the editor to focus on the selected objects.
+// =============================================================================
+
+Camera_Focus_State :: struct {
+	active:      bool,
+	targetPos:   Vec3,
+	targetYaw:   f32,
+	targetPitch: f32,
+}
+
+@(private)
+_FOCUS_SPEED :: f32(7.0) // exponential approach speed (units/s feel)
+
+// Distance used for the close-up double-tap focus.
+CAMERA_FOCUS_CLOSE_DISTANCE :: f32(1.0)
+
+// Begin a smooth focus animation toward `target`, framing a sphere of `radius`.
+// The camera re-orients to look directly at the target and backs off to a
+// distance where the bounding sphere fills ~75 % of the vertical FOV.
+Camera_Focus_Begin :: proc(focus: ^Camera_Focus_State, cam: ^Camera, target: Vec3, radius: f32) {
+	// Distance so the sphere fills 75 % of the vertical view height.
+	// tan(fovY/2) * d * 0.75 = radius  →  d = radius / (tan(fovY/2) * 0.75)
+	halfTan    := math.tan(cam.fovY * 0.5)
+	targetDist := radius / (halfTan * 0.75)
+	targetDist  = math.max(targetDist, radius * 1.2 + 0.5) // stay clear of the objects
+	_camera_focus_begin_at(focus, cam, target, radius, targetDist)
+}
+
+// Begin a smooth close-up focus animation, stopping ~5 m from the target centre.
+// Clamped so the camera never clips into the bounding sphere of the selection.
+Camera_Focus_Begin_Close :: proc(focus: ^Camera_Focus_State, cam: ^Camera, target: Vec3, radius: f32) {
+	targetDist := math.max(CAMERA_FOCUS_CLOSE_DISTANCE, radius * 1.2 + 0.5)
+	_camera_focus_begin_at(focus, cam, target, radius, targetDist)
+}
+
+@(private)
+_camera_focus_begin_at :: proc(focus: ^Camera_Focus_State, cam: ^Camera, target: Vec3, radius: f32, dist: f32) {
+	toTarget := target - cam.position
+	dir: Vec3
+	if Vec3_Length_Sq(toTarget) < 1e-4 {
+		dir = Camera_Get_Forward(cam)
+	} else {
+		dir = Vec3_Normalize(toTarget)
+	}
+
+	focus.targetPos   = target - dir * dist
+	focus.targetPitch = math.asin(clamp(dir.y, f32(-1), f32(1)))
+	focus.targetYaw   = math.atan2(dir.x, -dir.z)
+
+	// Normalise targetYaw to [0, 2π] to match the camera convention.
+	TWO_PI :: f32(6.28318530718)
+	for focus.targetYaw < 0      do focus.targetYaw += TWO_PI
+	for focus.targetYaw > TWO_PI do focus.targetYaw -= TWO_PI
+
+	focus.active = true
+}
+
+// Animate the camera one step toward its focus target.  Call every frame.
+// The animation stops automatically once the camera is settled.
+Camera_Focus_Update :: proc(focus: ^Camera_Focus_State, cam: ^Camera, dt: f32) {
+	if !focus.active do return
+
+	t := f32(1) - math.exp(-_FOCUS_SPEED * dt)
+
+	cam.position = Vec3_Lerp(cam.position, focus.targetPos, t)
+
+	// Shortest-arc yaw interpolation.
+	TWO_PI :: f32(6.28318530718)
+	yawDiff := focus.targetYaw - cam.yaw
+	for yawDiff >  math.PI do yawDiff -= TWO_PI
+	for yawDiff < -math.PI do yawDiff += TWO_PI
+	cam.yaw += yawDiff * t
+	for cam.yaw > TWO_PI do cam.yaw -= TWO_PI
+	for cam.yaw < 0      do cam.yaw += TWO_PI
+
+	cam.pitch = cam.pitch + (focus.targetPitch - cam.pitch) * t
+	cam.pitch = clamp(cam.pitch, -cam.pitchLimit, cam.pitchLimit)
+	cam.dirty = true
+
+	// Settle: snap to target once close enough.
+	posDelta  := Vec3_Length(cam.position - focus.targetPos)
+	yawDiff2  := focus.targetYaw - cam.yaw
+	for yawDiff2 >  math.PI do yawDiff2 -= TWO_PI
+	for yawDiff2 < -math.PI do yawDiff2 += TWO_PI
+	pitchDiff := math.abs(focus.targetPitch - cam.pitch)
+	if posDelta < 0.01 && math.abs(yawDiff2) < 0.001 && pitchDiff < 0.001 {
+		cam.position = focus.targetPos
+		cam.yaw      = focus.targetYaw
+		cam.pitch    = clamp(focus.targetPitch, -cam.pitchLimit, cam.pitchLimit)
+		cam.dirty    = true
+		focus.active = false
+	}
+}
+
+// Interrupt a running focus animation (e.g. when the user starts flying).
+Camera_Focus_Cancel :: proc(focus: ^Camera_Focus_State) {
+	focus.active = false
+}
+
+// =============================================================================
 // Internal
 // =============================================================================
 

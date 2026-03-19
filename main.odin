@@ -61,6 +61,8 @@ main :: proc() {
 
 	cam := eng.Camera_Create({0, 80, 300}, 75)
 	eng.Camera_Look_At(&cam, {0, 0, 0})
+	focusAnim:           eng.Camera_Focus_State
+	focusDoubleTapTimer: f32 // counts down from FOCUS_DOUBLE_TAP_WINDOW after first F press
 	// Cursor starts unlocked - right-click to enter fly mode.
 
 	cube, cubeOk := rend.Mesh_Create_Cube()
@@ -130,6 +132,12 @@ main :: proc() {
 			eng.Input_Set_Cursor_Locked(inp, win, false)
 		}
 
+		// Cancel focus animation when the user enters fly mode.
+		if inp.cursorLocked {
+			eng.Camera_Focus_Cancel(&focusAnim)
+		}
+		eng.Camera_Focus_Update(&focusAnim, &cam, dt)
+
 		screenSize := eng.Vec2{f32(win.width), f32(win.height)}
 		additiveSelection := eng.Input_Key_Down(inp, eng.KEY_LEFT_SHIFT)
 
@@ -137,6 +145,24 @@ main :: proc() {
 			if eng.Input_Key_Pressed(inp, eng.KEY_W) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_TRANSLATE)
 			if eng.Input_Key_Pressed(inp, eng.KEY_E) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_ROTATE)
 			if eng.Input_Key_Pressed(inp, eng.KEY_R) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_SCALE)
+
+			FOCUS_DOUBLE_TAP_WINDOW :: f32(0.25)
+			if eng.Input_Key_Pressed(inp, eng.KEY_F) {
+				focusCenter, focusRadius, focusOk := scene.Selection_Get_Focus_Bounds(world, selection)
+				if focusOk {
+					if focusDoubleTapTimer > 0 {
+						// Second tap within the window — fly in close.
+						eng.Camera_Focus_Begin_Close(&focusAnim, &cam, focusCenter, focusRadius)
+						focusDoubleTapTimer = 0
+					} else {
+						// First tap — normal framing focus.
+						eng.Camera_Focus_Begin(&focusAnim, &cam, focusCenter, focusRadius)
+						focusDoubleTapTimer = FOCUS_DOUBLE_TAP_WINDOW
+					}
+				}
+			}
+			focusDoubleTapTimer -= dt
+			if focusDoubleTapTimer < 0 do focusDoubleTapTimer = 0
 
 			ctrlDown := eng.Input_Key_Down(inp, eng.KEY_LEFT_CONTROL)
 			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_S) {
@@ -200,7 +226,7 @@ main :: proc() {
 			rend.Renderer_Draw_Marquee(&r, screenSize, marquee.start, marquee.current)
 		}
 		hudText := fmt.tprintf(
-			"ODIN 3D ENGINE\nENTITIES %d\nSELECTED %d\nFPS %.0f\nTOOL %s\nW MOVE  E ROTATE  R SCALE\nRMB FLY\nLMB SELECT DRAG\nSHIFT LMB ADD\nCTRL+Z UNDO  CTRL+Y REDO",
+			"ODIN 3D ENGINE\nENTITIES %d\nSELECTED %d\nFPS %.0f\nTOOL %s\nW MOVE  E ROTATE  R SCALE\nF FOCUS\nRMB FLY\nLMB SELECT DRAG\nSHIFT LMB ADD\nCTRL+Z UNDO  CTRL+Y REDO",
 			world.count, selection.count, fps, scene.Transform_Gizmo_Mode_Label(scene.Transform_Gizmo_Get_Mode(&gizmo)),
 		)
 		hudPos := eng.Vec2{14, 14}
