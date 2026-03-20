@@ -2,8 +2,6 @@ package scene
 
 import eng "../engine"
 
-MAX_CLIPBOARD_ENTRIES :: 1024
-
 // Distance along the cursor ray used when the grid plane cannot be hit.
 PASTE_FALLBACK_DIST :: f32(20.0)
 
@@ -26,19 +24,23 @@ Clipboard_Entry :: struct {
 }
 
 // In-engine clipboard.  Zero-value is valid — no Init needed.
-// Holds up to MAX_CLIPBOARD_ENTRIES entity snapshots.
+// Call Clipboard_Destroy when done.
 Clipboard :: struct {
-	entries: [MAX_CLIPBOARD_ENTRIES]Clipboard_Entry,
-	count:   int,
+	entries: [dynamic]Clipboard_Entry,
+}
+
+Clipboard_Destroy :: proc(clip: ^Clipboard) {
+	delete(clip.entries)
+	clip.entries = nil
 }
 
 // Snapshot the current selection into clip.  Overwrites any previous contents.
 Clipboard_Copy :: proc(w: ^World, sel: ^Selection_Set, clip: ^Clipboard) {
-	clip.count = 0
+	clear(&clip.entries)
 	for i in 0 ..< w.count {
 		if !Selection_Contains_Index(sel, w, u32(i)) do continue
 
-		e := &clip.entries[clip.count]
+		e: Clipboard_Entry
 		e.mask = {}
 
 		id := World_Entity_ID(w, u32(i))
@@ -55,8 +57,7 @@ Clipboard_Copy :: proc(w: ^World, sel: ^Selection_Set, clip: ^Clipboard) {
 			e.mask     |= COMP_VELOCITY
 		}
 
-		clip.count += 1
-		if clip.count >= MAX_CLIPBOARD_ENTRIES do break
+		append(&clip.entries, e)
 	}
 }
 
@@ -79,7 +80,7 @@ Clipboard_Paste :: proc(
 	origin: eng.Vec3,
 	dir:    eng.Vec3,
 ) -> (ids: [dynamic]EntityID, snap: [dynamic]Clipboard_Entry, ok: bool) {
-	if clip.count == 0 do return {}, {}, false
+	if len(clip.entries) == 0 do return {}, {}, false
 
 	// Resolve XZ paste target.
 	// Project cursor ray onto the Y=0 grid plane for a predictable result.
@@ -98,8 +99,7 @@ Clipboard_Paste :: proc(
 	// Clipboard XZ centroid — used to offset the group as a whole.
 	centroidX, centroidZ: f32
 	validCount := 0
-	for i in 0 ..< clip.count {
-		e := clip.entries[i]
+	for e in clip.entries {
 		if e.mask & COMP_TRANSFORM == 0 do continue
 		centroidX  += e.transform.position.x
 		centroidZ  += e.transform.position.z
@@ -113,13 +113,13 @@ Clipboard_Paste :: proc(
 	xOff := targetX - centroidX
 	zOff := targetZ - centroidZ
 
-	ids  = make([dynamic]EntityID,       0, clip.count)
-	snap = make([dynamic]Clipboard_Entry, 0, clip.count)
+	ids  = make([dynamic]EntityID,       0, len(clip.entries))
+	snap = make([dynamic]Clipboard_Entry, 0, len(clip.entries))
 
 	Selection_Clear(sel)
 
-	for i in 0 ..< clip.count {
-		e  := clip.entries[i]
+	for entry in clip.entries {
+		e  := entry // entry is non-mutable by default. 
 		id := World_Entity_Create(w)
 
 		if e.mask & COMP_TRANSFORM != 0 {

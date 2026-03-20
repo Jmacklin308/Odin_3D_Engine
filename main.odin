@@ -115,6 +115,7 @@ main :: proc() {
 	defer scene.Undo_History_Destroy(&history)
 
 	clipboard: scene.Clipboard
+	defer scene.Clipboard_Destroy(&clipboard)
 
 	marquee: scene.Marquee_Selection
 

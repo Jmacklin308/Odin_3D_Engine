@@ -733,7 +733,7 @@ _gizmo_draw_translate :: proc(gizmo: ^Transform_Gizmo, renderer: ^rend.Renderer,
 
 		center := origin + dir1 * (GIZMO_TRANSLATE_PLANE_OFFSET * gizmoScale) + dir2 * (GIZMO_TRANSLATE_PLANE_OFFSET * gizmoScale)
 		model  := _gizmo_basis_model(center, dir1, normalDir, dir2, {size, thickness, size})
-		rend.Renderer_Draw_Mesh(renderer, &gizmo.mesh, model, color)
+		rend.Renderer_Draw_Mesh(renderer, &gizmo.mesh, model, color, true)
 	}
 }
 

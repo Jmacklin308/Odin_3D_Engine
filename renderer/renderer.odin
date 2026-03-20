@@ -188,12 +188,14 @@ Renderer_Draw_Grid :: proc(renderer: ^Renderer) {
 }
 
 // Draw a mesh with a model matrix and a solid RGB colour.
-Renderer_Draw_Mesh :: proc(renderer: ^Renderer, mesh: ^Mesh, model: eng.Mat4, color: eng.Vec3 = {1, 1, 1}) {
+// Pass double_sided=true to light both faces equally (e.g. thin gizmo planes).
+Renderer_Draw_Mesh :: proc(renderer: ^Renderer, mesh: ^Mesh, model: eng.Mat4, color: eng.Vec3 = {1, 1, 1}, double_sided: bool = false) {
 	normalMat := eng.Mat4_Normal(model)
 	modelCopy := model
-	Shader_Set_Mat4(&renderer.defaultShader, "uModel",        &modelCopy)
-	Shader_Set_Mat4(&renderer.defaultShader, "uNormalMatrix", &normalMat)
-	Shader_Set_Vec3(&renderer.defaultShader, "uColor",        color)
+	Shader_Set_Mat4(&renderer.defaultShader,   "uModel",        &modelCopy)
+	Shader_Set_Mat4(&renderer.defaultShader,   "uNormalMatrix", &normalMat)
+	Shader_Set_Vec3(&renderer.defaultShader,   "uColor",        color)
+	Shader_Set_Float(&renderer.defaultShader,  "uDoubleSided",  1.0 if double_sided else 0.0)
 	Mesh_Draw(mesh)
 }
 
@@ -353,7 +355,8 @@ layout(std140) uniform FrameUniforms {
     vec4 uAmbient;
 };
 
-uniform vec3 uColor;
+uniform vec3  uColor;
+uniform float uDoubleSided;
 
 out vec4 fragColor;
 
@@ -361,7 +364,8 @@ void main() {
     vec3 normal   = normalize(vNormal);
     vec3 lightDir = normalize(-uLightDir.xyz);
 
-    float diff    = max(dot(normal, lightDir), 0.0);
+    float rawDiff = dot(normal, lightDir);
+    float diff    = mix(max(rawDiff, 0.0), abs(rawDiff), uDoubleSided);
     vec3  diffuse = diff * uLightColor.xyz;
 
     vec3  viewDir  = normalize(uViewPos.xyz - vFragPos);

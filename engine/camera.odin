@@ -233,7 +233,7 @@ Camera_Focus_Begin :: proc(focus: ^Camera_Focus_State, cam: ^Camera, target: Vec
 // Begin a smooth close-up focus animation, stopping ~5 m from the target centre.
 // Clamped so the camera never clips into the bounding sphere of the selection.
 Camera_Focus_Begin_Close :: proc(focus: ^Camera_Focus_State, cam: ^Camera, target: Vec3, radius: f32) {
-	targetDist := math.max(CAMERA_FOCUS_CLOSE_DISTANCE, radius * 1.2 + 0.5)
+	targetDist := math.max(CAMERA_FOCUS_CLOSE_DISTANCE, radius * 1.2 + 0.2)
 	_camera_focus_begin_at(focus, cam, target, radius, targetDist)
 }
 
