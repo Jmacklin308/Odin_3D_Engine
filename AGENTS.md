@@ -59,3 +59,10 @@ renderer/   → package renderer  (import as: import rend "renderer")
 - Do not add a build system (Makefile, etc.) unless asked
 - Do not split `engine` or `renderer` into sub-packages unless asked
 - Do not change the `Vertex` layout or size without updating the `#assert`
+
+
+## UI and design
+ - UI should be elegant and smooth.
+ - UI should be visually appealing and interactive for fun.
+ - Fun should be a priority 
+ 

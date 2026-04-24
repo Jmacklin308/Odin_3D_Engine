@@ -80,6 +80,7 @@ main :: proc() {
 	cam := eng.Camera_Create({0, 80, 300}, 75)
 	eng.Camera_Look_At(&cam, {0, 0, 0})
 	focusAnim:           eng.Camera_Focus_State
+	orbitZoom:           eng.CameraOrbitZoomState
 	focusDoubleTapTimer: f32 // counts down from FOCUS_DOUBLE_TAP_WINDOW after first F press
 	// Cursor starts unlocked - right-click to enter fly mode.
 
@@ -173,6 +174,9 @@ main :: proc() {
 		dt  := eng.Get_Delta_Time()
 		inp := eng.Get_Input()
 		win := eng.Get_Window()
+		altDown := eng.Input_Key_Down(inp, eng.KEY_LEFT_ALT) || eng.Input_Key_Down(inp, eng.KEY_RIGHT_ALT)
+		altPressed := eng.Input_Key_Pressed(inp, eng.KEY_LEFT_ALT) || eng.Input_Key_Pressed(inp, eng.KEY_RIGHT_ALT)
+		shiftDown := eng.Input_Key_Down(inp, eng.KEY_LEFT_SHIFT)
 
 		if eng.Input_Key_Pressed(inp, eng.KEY_ESCAPE) {
 			if placementKind != PLACEMENT_NONE {
@@ -183,19 +187,39 @@ main :: proc() {
 		}
 
 		if !scene.Transform_Gizmo_Is_Dragging(&gizmo) {
-			eng.Camera_FPS_Update_RMB(&cam, inp, win, dt)
+			orbitCenter, orbitRadius, orbitOk := scene.Selection_Get_Focus_Bounds(world, selection)
+			rmbDown := eng.Input_Mouse_Down(inp, eng.MOUSE_RIGHT)
+			scrollY := f32(0)
+			if altDown do scrollY = eng.Input_Scroll_Delta(inp).y
+			zoomRequested := orbitOk && altDown && scrollY != 0
+			orbiting := orbitOk && altDown && rmbDown
+
+			if orbiting {
+				eng.Camera_Orbit_Update_RMB(&cam, inp, win, orbitCenter, altPressed)
+				if !zoomRequested do eng.Camera_Orbit_Zoom_Cancel(&orbitZoom)
+			} else {
+				eng.Camera_FPS_Update_RMB(&cam, inp, win, dt)
+				if rmbDown do eng.Camera_Orbit_Zoom_Cancel(&orbitZoom)
+			}
+
+			if zoomRequested || (!rmbDown && orbitOk && orbitZoom.active) {
+				eng.Camera_Orbit_Zoom_Update(&orbitZoom, &cam, orbitCenter, orbitRadius, scrollY, dt, shiftDown)
+			} else if !orbitOk || rmbDown {
+				eng.Camera_Orbit_Zoom_Cancel(&orbitZoom)
+			}
 		} else if inp.cursorLocked {
 			eng.Input_Set_Cursor_Locked(inp, win, false)
+			eng.Camera_Orbit_Zoom_Cancel(&orbitZoom)
 		}
 
 		// Cancel focus animation when the user enters fly mode.
-		if inp.cursorLocked {
+		if inp.cursorLocked || orbitZoom.active {
 			eng.Camera_Focus_Cancel(&focusAnim)
 		}
 		eng.Camera_Focus_Update(&focusAnim, &cam, dt)
 
 		screenSize := eng.Vec2{f32(win.width), f32(win.height)}
-		additiveSelection := eng.Input_Key_Down(inp, eng.KEY_LEFT_SHIFT)
+		additiveSelection := shiftDown
 		currentMode := scene.Transform_Gizmo_Get_Mode(&gizmo)
 		drawerTarget := f32(1.0) if placeDrawerOpen else f32(0.0)
 		drawerEase := 1.0 - math.pow(f32(0.5), dt * 10.0)

@@ -135,6 +135,12 @@ DEFAULT_FPS_PARAMS :: CameraFPSParams{
 	sprintMult       = 3.0,
 }
 
+CameraOrbitZoomState :: struct {
+	active:         bool,
+	focusPoint:     Vec3,
+	targetDistance: f32,
+}
+
 // Applies the built-in WASD, mouse-look, and sprint camera controls.
 // Always active — use Camera_FPS_Update_RMB for Unity/Godot-style right-click-to-look.
 Camera_FPS_Update :: proc(cam: ^Camera, input: ^Input, dt: f32, params: CameraFPSParams = DEFAULT_FPS_PARAMS) {
@@ -196,6 +202,97 @@ Camera_FPS_Update_RMB :: proc(cam: ^Camera, input: ^Input, win: ^Window, dt: f32
 	if Input_Key_Down(input, KEY_Q) do vert -= speed * dt
 
 	Camera_Move_Local(cam, fwd, rgt, vert)
+}
+
+// Orbits around a world-space target while right mouse is held.
+// The target remains centred by preserving the current camera-target distance.
+Camera_Orbit_Update_RMB :: proc(cam: ^Camera, input: ^Input, win: ^Window, target: Vec3, recenter: bool = false, params: CameraFPSParams = DEFAULT_FPS_PARAMS) {
+	rmbDown     := Input_Mouse_Down(input, MOUSE_RIGHT)
+	rmbPressed  := Input_Mouse_Pressed(input, MOUSE_RIGHT)
+	rmbReleased := Input_Mouse_Released(input, MOUSE_RIGHT)
+
+	if rmbPressed || (rmbDown && recenter) {
+		Camera_Look_At(cam, target)
+		Input_Set_Cursor_Locked(input, win, true)
+	}
+	if rmbReleased do Input_Set_Cursor_Locked(input, win, false)
+
+	if !rmbDown do return
+
+	distance := Vec3_Distance(cam.position, target)
+	if distance < 0.001 do distance = 0.001
+
+	delta := Input_Mouse_Delta(input)
+	Camera_Rotate(cam, delta.x * params.mouseSensitivity, -delta.y * params.mouseSensitivity)
+
+	forward := Camera_Get_Forward(cam)
+	cam.position = target - forward * distance
+	cam.dirty = true
+}
+
+Camera_Orbit_Zoom_Update :: proc(zoom: ^CameraOrbitZoomState, cam: ^Camera, target: Vec3, radius: f32, scrollY, dt: f32, linearZoom: bool = false) {
+	currentDistance := Vec3_Distance(cam.position, target)
+	if currentDistance < 0.001 do currentDistance = 0.001
+
+	halfTan := math.tan(cam.fovY * 0.5)
+	fillDistance := radius / (halfTan * 0.96)
+	minDistance := math.max(math.max(radius * 1.05 + 0.1, fillDistance), 0.2)
+	maxDistance := math.max(minDistance, cam.farPlane * 0.95)
+
+	if scrollY != 0 {
+		if !zoom.active {
+			forward := Camera_Get_Forward(cam)
+			zoom.focusPoint = cam.position + forward * currentDistance
+			zoom.targetDistance = currentDistance
+		}
+		ZOOM_IN_STEP_MIN  :: f32(0.055)
+		ZOOM_IN_STEP_MAX  :: f32(0.86)
+		ZOOM_OUT_STEP     :: f32(0.55)
+		ZOOM_LINEAR_STEP  :: f32(0.9)
+
+		step: f32
+		if linearZoom {
+			step = ZOOM_LINEAR_STEP
+		} else if scrollY > 0 {
+			distanceRatio := zoom.targetDistance / minDistance
+			room := clamp((distanceRatio - 1.0) / 1.5, 0, 1)
+			step = ZOOM_IN_STEP_MIN + (ZOOM_IN_STEP_MAX - ZOOM_IN_STEP_MIN) * room
+		} else {
+			step = ZOOM_OUT_STEP
+		}
+		zoom.targetDistance *= math.exp(-scrollY * step)
+		zoom.targetDistance = clamp(zoom.targetDistance, minDistance, maxDistance)
+		zoom.active = true
+	}
+
+	if !zoom.active do return
+
+	t := f32(1) - math.exp(-12.0 * dt)
+	zoom.focusPoint = Vec3_Lerp(zoom.focusPoint, target, t)
+
+	focusDistance := Vec3_Distance(cam.position, zoom.focusPoint)
+	if focusDistance < 0.001 do focusDistance = 0.001
+
+	distance := focusDistance + (zoom.targetDistance - focusDistance) * t
+	distance = clamp(distance, minDistance, maxDistance)
+
+	Camera_Look_At(cam, zoom.focusPoint)
+	forward := Camera_Get_Forward(cam)
+	cam.position = zoom.focusPoint - forward * distance
+	cam.dirty = true
+
+	if Vec3_Distance(zoom.focusPoint, target) < 0.001 && math.abs(distance - zoom.targetDistance) < 0.001 {
+		zoom.focusPoint = target
+		Camera_Look_At(cam, zoom.focusPoint)
+		forward = Camera_Get_Forward(cam)
+		cam.position = zoom.focusPoint - forward * zoom.targetDistance
+		cam.dirty = true
+		zoom.active = false
+	}
+}
+
+Camera_Orbit_Zoom_Cancel :: proc(zoom: ^CameraOrbitZoomState) {
+	zoom.active = false
 }
 
 // =============================================================================
