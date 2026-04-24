@@ -257,6 +257,74 @@ Renderer_Draw_Screen_Rect :: proc(renderer: ^Renderer, screenSize, min, max: eng
 	_overlay_end(renderer)
 }
 
+// Draws a small 3D mesh preview inside a screen-space rectangle.
+// Intended for editor UI palettes, not world rendering.
+Renderer_Draw_Mesh_Preview :: proc(
+	renderer:   ^Renderer,
+	mesh:       ^Mesh,
+	screenSize: eng.Vec2,
+	min, max:   eng.Vec2,
+	angle:      f32,
+	color:      eng.Vec3 = {0.8, 0.4, 0.2},
+) {
+	if mesh == nil do return
+
+	width  := max.x - min.x
+	height := max.y - min.y
+	if width <= 2 || height <= 2 do return
+
+	vpX := i32(min.x)
+	vpY := i32(screenSize.y - max.y)
+	vpW := i32(width)
+	vpH := i32(height)
+	if vpW <= 0 || vpH <= 0 do return
+
+	gl.Enable(gl.SCISSOR_TEST)
+	gl.Scissor(vpX, vpY, vpW, vpH)
+	gl.Viewport(vpX, vpY, vpW, vpH)
+	gl.Clear(gl.DEPTH_BUFFER_BIT)
+	gl.Enable(gl.DEPTH_TEST)
+	gl.Enable(gl.CULL_FACE)
+
+	previewEye := eng.Vec3{1.7, 1.25, 2.2}
+	previewView := eng.Mat4_Look_At(previewEye, eng.VEC3_ZERO, eng.VEC3_UP)
+	previewProj := eng.Mat4_Perspective(eng.To_Radians(42.0), width / height, 0.1, 16.0)
+
+	frameData := _FrameUniforms{
+		view       = previewView,
+		projection = previewProj,
+		viewPos    = {previewEye.x, previewEye.y, previewEye.z, 0},
+		lightDir   = {renderer.light.direction.x, renderer.light.direction.y, renderer.light.direction.z, 0},
+		lightColor = {renderer.light.color.x, renderer.light.color.y, renderer.light.color.z, 0},
+		ambient    = {0.18, 0.20, 0.24, 0},
+	}
+	gl.BindBuffer(gl.UNIFORM_BUFFER, renderer.frameUBO)
+	gl.BufferSubData(gl.UNIFORM_BUFFER, 0, size_of(_FrameUniforms), &frameData)
+	gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
+
+	model := eng.Mat4_Rotate(angle, eng.VEC3_UP) * eng.Mat4_Rotate(-0.35, eng.VEC3_RIGHT)
+	Renderer_Draw_Mesh(renderer, mesh, model, color)
+
+	gl.Disable(gl.SCISSOR_TEST)
+	gl.Viewport(0, 0, i32(screenSize.x), i32(screenSize.y))
+
+	// Restore the scene frame data in case more world-space draws are added after
+	// UI previews later. Overlay text/rects do not use this UBO, but this keeps
+	// the renderer state polite.
+	restoreData := _FrameUniforms{
+		view       = renderer.viewMat,
+		projection = renderer.projMat,
+		viewPos    = {renderer.viewPos.x, renderer.viewPos.y, renderer.viewPos.z, 0},
+		lightDir   = {renderer.light.direction.x, renderer.light.direction.y, renderer.light.direction.z, 0},
+		lightColor = {renderer.light.color.x, renderer.light.color.y, renderer.light.color.z, 0},
+		ambient    = {renderer.light.ambient.x, renderer.light.ambient.y, renderer.light.ambient.z, 0},
+	}
+	gl.BindBuffer(gl.UNIFORM_BUFFER, renderer.frameUBO)
+	gl.BufferSubData(gl.UNIFORM_BUFFER, 0, size_of(_FrameUniforms), &restoreData)
+	gl.BindBuffer(gl.UNIFORM_BUFFER, 0)
+	Shader_Bind(&renderer.defaultShader)
+}
+
 // Draws a translucent marquee with a crisp border.
 Renderer_Draw_Marquee :: proc(renderer: ^Renderer, screenSize, p0, p1: eng.Vec2) {
 	min := eng.Vec2{min(p0.x, p1.x), min(p0.y, p1.y)}

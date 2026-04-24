@@ -15,9 +15,10 @@
 8. [Mesh](#mesh)
 9. [Shader](#shader)
 10. [Renderer](#renderer)
-11. [Large World Considerations](#large-world-considerations)
-12. [Performance Notes](#performance-notes)
-13. [What's Next](#whats-next)
+11. [Editor UI & Placement](#editor-ui--placement)
+12. [Large World Considerations](#large-world-considerations)
+13. [Performance Notes](#performance-notes)
+14. [What's Next](#whats-next)
 
 ---
 
@@ -35,10 +36,12 @@ renderer/  (package renderer)
 ├── renderer.odin  — Blinn-Phong renderer, draw calls, lighting, per-frame UBO
 ├── mesh.odin      — GPU mesh upload, draw calls, built-in primitives
 ├── shader.odin    — GLSL shader compilation, cached uniform locations
-└── grid.odin      — Infinite-look debug grid (analytical, screen-space derivatives)
+├── grid.odin      — Infinite-look debug grid (analytical, screen-space derivatives)
+├── text.odin      — Tiny built-in bitmap font for debug/editor UI
+└── ui.odin        — Immediate-mode editor UI widgets and model previews
 ```
 
-Two packages. Both are imported separately. The renderer depends on the engine for math types and camera, but the engine knows nothing about the renderer — keeping the dependency one-directional.
+The renderer depends on the engine for math types and camera, but the engine knows nothing about the renderer — keeping the dependency one-directional. The `scene/` package builds editor/game-world behavior on top of both.
 
 ---
 
@@ -502,6 +505,51 @@ rend.Renderer_Use_Default_Shader(&r)
 ```odin
 rend.Renderer_Set_Clear_Color(&r, {0.53, 0.81, 0.98, 1.0}) // sky blue
 ```
+
+---
+
+## Editor UI & Placement
+
+File: `renderer/ui.odin` — `package renderer`
+
+The editor UI is a small immediate-mode layer built on top of the renderer's screen-space overlay system. It is intentionally raylib-ish: begin the UI, declare widgets, end it, then render the queued UI after world/editor draws.
+
+```odin
+ui: rend.UI_Context
+rend.UI_Init(&ui)
+defer rend.UI_Shutdown(&ui)
+
+// Each frame, before scene input consumes mouse clicks:
+rend.UI_Begin(&ui, &r, screenSize, eng.Get_Input(), dt)
+if rend.UI_Button(&ui, "my_button", {20, 20, 100, 32}, "CLICK") {
+    // handle click
+}
+rend.UI_End(&ui)
+
+uiCaptured := rend.UI_Wants_Mouse(&ui)
+
+// After world rendering:
+rend.UI_Render(&ui)
+```
+
+### Palette Drawer
+
+`main.odin` currently has a bottom placement drawer:
+
+- Click the arrow tab to expand/collapse it.
+- Click `CUBE` to enter cube placement mode.
+- Left-click the scene to place cubes on the ground plane.
+- Press `Escape` to cancel placement mode. If placement mode is inactive, `Escape` quits as usual.
+
+The drawer item preview uses `UI_Model_Preview`, which renders the actual mesh into a small screen-space rectangle. Hovering the item increases its spin speed, so future placeable items can show the real model instead of a flat icon.
+
+```odin
+hover := rend.UI_Hover_Amount(&ui, "place_cube")
+angle := rend.UI_Time(&ui) * (0.65 + hover * 3.0)
+rend.UI_Model_Preview(&ui, {x, y, w, h}, &cubeMesh, angle, {0.8, 0.4, 0.2})
+```
+
+The preview path temporarily sets a tiny OpenGL viewport/scissor rectangle, renders the mesh with a preview camera, then restores renderer frame data. This keeps model previews encapsulated in the renderer/UI layer instead of leaking OpenGL state management into editor code.
 
 ---
 

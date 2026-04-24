@@ -4,6 +4,7 @@ import eng "engine"
 import rend "renderer"
 import scene "scene"
 import "core:fmt"
+import "core:math"
 import "core:mem"
 
 // Package-level pointer so _mesh_resolver can reference it without a closure.
@@ -17,6 +18,11 @@ _mesh_resolver :: proc(name: string) -> (^rend.Mesh, bool) {
 	}
 	return nil, false
 }
+
+Placement_Kind :: distinct int
+
+PLACEMENT_NONE :: Placement_Kind(0)
+PLACEMENT_CUBE :: Placement_Kind(1)
 
 main :: proc() {
 	// for debugging!
@@ -50,6 +56,10 @@ main :: proc() {
 		return
 	}
 	defer rend.Renderer_Shutdown(&r)
+
+	ui: rend.UI_Context
+	rend.UI_Init(&ui)
+	defer rend.UI_Shutdown(&ui)
 	
 
 	gizmo: scene.Transform_Gizmo
@@ -118,6 +128,9 @@ main :: proc() {
 	defer scene.Clipboard_Destroy(&clipboard)
 
 	marquee: scene.Marquee_Selection
+	placementKind := PLACEMENT_NONE
+	placeDrawerOpen := false
+	placeDrawerT: f32
 
 	for eng.Running() {
 		eng.Begin_Frame()
@@ -127,7 +140,13 @@ main :: proc() {
 		inp := eng.Get_Input()
 		win := eng.Get_Window()
 
-		if eng.Input_Key_Pressed(inp, eng.KEY_ESCAPE) do eng.Quit()
+		if eng.Input_Key_Pressed(inp, eng.KEY_ESCAPE) {
+			if placementKind != PLACEMENT_NONE {
+				placementKind = PLACEMENT_NONE
+			} else {
+				eng.Quit()
+			}
+		}
 
 		if !scene.Transform_Gizmo_Is_Dragging(&gizmo) {
 			eng.Camera_FPS_Update_RMB(&cam, inp, win, dt)
@@ -143,6 +162,62 @@ main :: proc() {
 
 		screenSize := eng.Vec2{f32(win.width), f32(win.height)}
 		additiveSelection := eng.Input_Key_Down(inp, eng.KEY_LEFT_SHIFT)
+		currentMode := scene.Transform_Gizmo_Get_Mode(&gizmo)
+		drawerTarget := f32(1.0) if placeDrawerOpen else f32(0.0)
+		drawerEase := 1.0 - math.pow(f32(0.5), dt * 10.0)
+		placeDrawerT = eng.F32_Lerp(placeDrawerT, drawerTarget, clamp(drawerEase, 0, 1))
+
+		rend.UI_Begin(&ui, &r, screenSize, inp, dt)
+		rend.UI_Panel(&ui, {14, 14, 292, 214})
+		rend.UI_Label(&ui, {30, 30}, "ODIN 3D ENGINE", 2.0)
+		rend.UI_Label(&ui, {30, 54}, fmt.tprintf("ENTITIES %d  SELECTED %d", world.count, selection.count), 1.5, ui.theme.textMuted)
+		rend.UI_Label(&ui, {30, 73}, fmt.tprintf("FPS %.0f", fps), 1.5, ui.theme.textMuted)
+
+		if rend.UI_Button(&ui, "tool_translate", {30, 100, 80, 32}, "MOVE", currentMode == scene.GIZMO_MODE_TRANSLATE) {
+			scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_TRANSLATE)
+		}
+		if rend.UI_Button(&ui, "tool_rotate", {120, 100, 80, 32}, "ROTATE", currentMode == scene.GIZMO_MODE_ROTATE) {
+			scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_ROTATE)
+		}
+		if rend.UI_Button(&ui, "tool_scale", {210, 100, 80, 32}, "SCALE", currentMode == scene.GIZMO_MODE_SCALE) {
+			scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_SCALE)
+		}
+
+		rend.UI_Label(&ui, {30, 148}, "W/E/R TOOLS   F FOCUS", 1.5, ui.theme.textMuted)
+		rend.UI_Label(&ui, {30, 167}, "RMB FLY   LMB SELECT/DRAG", 1.5, ui.theme.textMuted)
+		rend.UI_Label(&ui, {30, 186}, "SHIFT ADD   CTRL+Z/Y UNDO", 1.5, ui.theme.textMuted)
+
+		drawerW := f32(420.0)
+		drawerH := f32(120.0)
+		drawerX := (screenSize.x - drawerW) * 0.5
+		drawerClosedY := screenSize.y - 18.0
+		drawerOpenY := screenSize.y - drawerH
+		drawerY := eng.F32_Lerp(drawerClosedY, drawerOpenY, placeDrawerT)
+		arrowText := "^" if !placeDrawerOpen else "V"
+
+		if rend.UI_Button(&ui, "place_drawer_toggle", {drawerX + drawerW * 0.5 - 22, drawerY - 24, 44, 24}, arrowText) {
+			placeDrawerOpen = !placeDrawerOpen
+		}
+		rend.UI_Panel(&ui, {drawerX, drawerY, drawerW, drawerH})
+
+		if placeDrawerT > 0.08 {
+			rend.UI_Label(&ui, {drawerX + 18, drawerY + 17}, "PLACE", 1.5, ui.theme.textMuted)
+			cubeSelected := placementKind == PLACEMENT_CUBE
+			if rend.UI_Button(&ui, "place_cube", {drawerX + 18, drawerY + 40, 82, 62}, "", cubeSelected) {
+				placementKind = PLACEMENT_CUBE
+			}
+			cubeHover := rend.UI_Hover_Amount(&ui, "place_cube")
+			cubeAngle := rend.UI_Time(&ui) * (0.65 + cubeHover * 3.0)
+			rend.UI_Model_Preview(&ui, {drawerX + 33, drawerY + 43, 52, 38}, &cube, cubeAngle, {0.8, 0.4, 0.2})
+			rend.UI_Label(&ui, {drawerX + 39, drawerY + 86}, "CUBE", 1.25, ui.theme.text)
+			if placementKind != PLACEMENT_NONE {
+				rend.UI_Label(&ui, {drawerX + 116, drawerY + 52}, "CLICK SCENE TO PLACE", 1.5, ui.theme.text)
+				rend.UI_Label(&ui, {drawerX + 116, drawerY + 72}, "ESC CANCELS PLACEMENT", 1.5, ui.theme.textMuted)
+			}
+		}
+		rend.UI_End(&ui)
+
+		uiCaptured := rend.UI_Wants_Mouse(&ui)
 
 		if !inp.cursorLocked {
 			if eng.Input_Key_Pressed(inp, eng.KEY_W) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_TRANSLATE)
@@ -191,7 +266,27 @@ main :: proc() {
 			}
 		}
 
-		if !inp.cursorLocked {
+		if placementKind != PLACEMENT_NONE && !inp.cursorLocked && !uiCaptured && eng.Input_Mouse_Pressed(inp, eng.MOUSE_LEFT) {
+			origin, dir := scene.Scene_Ray_From_Screen(inp.mousePos, screenSize, &cam, win.aspect)
+			placePos := scene.Scene_Placement_Point_From_Ray(origin, dir)
+
+			switch placementKind {
+			case PLACEMENT_CUBE:
+				e := scene.World_Entity_Create(world)
+				scene.World_Add_Transform(world, e, eng.Transform{
+					position = {placePos.x, 0.2, placePos.z},
+					rotation = eng.QUAT_IDENTITY,
+					scale    = {0.4, 0.4, 0.4},
+				})
+				scene.World_Add_MeshRef(world, e, scene.MeshRef{
+					meshKey = cubeKey,
+					color   = {0.8, 0.4, 0.2},
+				})
+				scene.Selection_Set_Single(selection, world, e)
+			}
+		}
+
+		if !inp.cursorLocked && !uiCaptured && placementKind == PLACEMENT_NONE {
 			gizmoCaptured, gizmoCommitted := scene.Transform_Gizmo_Handle_Input(&gizmo, world, selection, inp, &cam, screenSize, win.aspect)
 			if gizmoCommitted {
 				scene.Undo_Gizmo_Commit(&history, &gizmo, world)
@@ -237,15 +332,7 @@ main :: proc() {
 		if marquee.dragging {
 			rend.Renderer_Draw_Marquee(&r, screenSize, marquee.start, marquee.current)
 		}
-		hudText := fmt.tprintf(
-			"ODIN 3D ENGINE\nENTITIES %d\nSELECTED %d\nFPS %.0f\nTOOL %s\nW MOVE  E ROTATE  R SCALE\nF FOCUS\nRMB FLY\nLMB SELECT DRAG\nSHIFT LMB ADD\nCTRL+Z UNDO  CTRL+Y REDO\nCTRL+C COPY  CTRL+V PASTE",
-			world.count, selection.count, fps, scene.Transform_Gizmo_Mode_Label(scene.Transform_Gizmo_Get_Mode(&gizmo)),
-		)
-		hudPos := eng.Vec2{14, 14}
-		hudPad := eng.Vec2{8, 8}
-		hudSize := rend.Renderer_Measure_Debug_Text(hudText, 2.0)
-		rend.Renderer_Draw_Screen_Rect(&r, screenSize, hudPos - hudPad, hudPos + hudSize + hudPad, {0.03, 0.04, 0.06, 0.78})
-		rend.Renderer_Draw_Debug_Text(&r, screenSize, hudPos, hudText, 2.0, {0.95, 0.97, 1.0, 1.0})
+		rend.UI_Render(&ui)
 		rend.Renderer_End(&r)
 
 		eng.End_Frame()
