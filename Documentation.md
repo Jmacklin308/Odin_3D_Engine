@@ -372,6 +372,8 @@ mesh, ok := rend.Mesh_Create(vertices, indices)
 
 // Built-in primitives
 cube,  ok := rend.Mesh_Create_Cube()
+pyramid, ok := rend.Mesh_Create_Pyramid()
+cone, ok := rend.Mesh_Create_Cone()
 plane, ok := rend.Mesh_Create_Plane(width=100, depth=100, subdivisionsX=10, subdivisionsZ=10)
 quad,  ok := rend.Mesh_Create_Quad(width=1, height=1)
 
@@ -380,6 +382,8 @@ defer rend.Mesh_Destroy(&mesh)
 ```
 
 CPU-side vertex data is **not retained** after upload. The GPU has a copy; you don't. If you need to modify geometry, keep your own `[]Vertex` slice.
+
+`Mesh_Create_Cube`, `Mesh_Create_Pyramid`, and `Mesh_Create_Cone` are handy for editor testing and primitive placement. For authored game art, prefer loading model files from an `assets/` folder once the engine has a mesh importer.
 
 ### Drawing
 
@@ -550,6 +554,35 @@ rend.UI_Model_Preview(&ui, {x, y, w, h}, &cubeMesh, angle, {0.8, 0.4, 0.2})
 ```
 
 The preview path temporarily sets a tiny OpenGL viewport/scissor rectangle, renders the mesh with a preview camera, then restores renderer frame data. This keeps model previews encapsulated in the renderer/UI layer instead of leaking OpenGL state management into editor code.
+
+### Built-in vs Asset Models
+
+Generated primitives are perfect while the placement system is young:
+
+- no external files to load
+- deterministic geometry for tests
+- easy serialization by mesh name, e.g. `cube`, `pyramid`, `cone`
+- quick previews without asset pipeline work
+
+An `assets/` folder becomes valuable when shapes are no longer simple primitives:
+
+- artists or Blender exports enter the workflow
+- models need UVs, materials, textures, or normals from DCC tools
+- the editor palette should be data-driven instead of hardcoded
+- you want to add many placeable objects without recompiling
+
+A good next step later would be:
+
+```text
+assets/
+├── models/
+│   ├── props/
+│   └── primitives/
+├── textures/
+└── materials/
+```
+
+For now, keeping cube/pyramid/cone as code-generated primitives is the right level of machinery.
 
 ---
 

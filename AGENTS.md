@@ -1,4 +1,9 @@
-# Odin 3D Engine — Claude Instructions
+# Agent Notes
+
+Before making non-trivial changes, read `Documentation/CodexNotes.md` for repo-specific implementation notes and recurring fixes.
+
+Keep `Documentation/CodexNotes.md` small and curated. Add entries only for decisions or fixes that are likely to help future sessions.
+
 
 ## Build & Run
 ```bash

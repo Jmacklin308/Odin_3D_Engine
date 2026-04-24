@@ -10,7 +10,7 @@ Think of each frame like running a restaurant kitchen:
 ## 1) Setup (one-time)
 
 1. `Renderer_Init` builds shaders and a per-frame uniform buffer (camera + light data).
-2. `World_Register_Mesh` stores each mesh in a registry and enables GPU instancing for it.
+2. `World_Register_Mesh` stores each mesh in a registry and enables GPU instancing for it. Current test primitives include cube, pyramid, and cone.
 3. Entities get:
    - `Transform` (position/rotation/scale)
    - `MeshRef` (`meshKey` + color)
@@ -54,7 +54,7 @@ Think of each frame like running a restaurant kitchen:
 
 ## UI model previews
 
-The placement drawer can show the actual 3D mesh for an item instead of a flat icon. `UI_Model_Preview` queues a mesh preview command. During `UI_Render`, the renderer:
+The placement drawer can show the actual 3D mesh for an item instead of a flat icon. Current placeable test meshes are generated in code (`Mesh_Create_Cube`, `Mesh_Create_Pyramid`, `Mesh_Create_Cone`). `UI_Model_Preview` queues a mesh preview command. During `UI_Render`, the renderer:
 
 1. Draws queued UI rectangles.
 2. Temporarily changes the viewport/scissor to the preview card.

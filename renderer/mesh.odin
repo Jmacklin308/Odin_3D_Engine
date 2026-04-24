@@ -2,6 +2,7 @@ package renderer
 
 import gl "vendor:OpenGL"
 import "core:fmt"
+import "core:math"
 import eng "../engine"
 
 // =============================================================================
@@ -232,6 +233,79 @@ Mesh_Create_Cube :: proc() -> (Mesh, bool) {
 	}
 
 	return Mesh_Create(vertices[:], indices[:])
+}
+
+// Creates a square-based pyramid centered around the origin.
+Mesh_Create_Pyramid :: proc() -> (Mesh, bool) {
+	ny := f32(0.4472136)
+	nz := f32(0.8944272)
+	nx := f32(0.8944272)
+
+	vertices := [18]Vertex{
+		// Base
+		{{-0.5, -0.5, -0.5}, {0, -1, 0}, {0, 0}},
+		{{+0.5, -0.5, +0.5}, {0, -1, 0}, {1, 1}},
+		{{+0.5, -0.5, -0.5}, {0, -1, 0}, {1, 0}},
+		{{-0.5, -0.5, -0.5}, {0, -1, 0}, {0, 0}},
+		{{-0.5, -0.5, +0.5}, {0, -1, 0}, {0, 1}},
+		{{+0.5, -0.5, +0.5}, {0, -1, 0}, {1, 1}},
+
+		// Sides
+		{{-0.5, -0.5, +0.5}, {0, ny, nz}, {0, 0}},
+		{{+0.5, -0.5, +0.5}, {0, ny, nz}, {1, 0}},
+		{{ 0.0, +0.5,  0.0}, {0, ny, nz}, {0.5, 1}},
+
+		{{+0.5, -0.5, +0.5}, {nx, ny, 0}, {0, 0}},
+		{{+0.5, -0.5, -0.5}, {nx, ny, 0}, {1, 0}},
+		{{ 0.0, +0.5,  0.0}, {nx, ny, 0}, {0.5, 1}},
+
+		{{+0.5, -0.5, -0.5}, {0, ny, -nz}, {0, 0}},
+		{{-0.5, -0.5, -0.5}, {0, ny, -nz}, {1, 0}},
+		{{ 0.0, +0.5,  0.0}, {0, ny, -nz}, {0.5, 1}},
+
+		{{-0.5, -0.5, -0.5}, {-nx, ny, 0}, {0, 0}},
+		{{-0.5, -0.5, +0.5}, {-nx, ny, 0}, {1, 0}},
+		{{ 0.0, +0.5,  0.0}, {-nx, ny, 0}, {0.5, 1}},
+	}
+
+	return Mesh_Create(vertices[:])
+}
+
+// Creates a cone centered around the origin with its base at y=-0.5.
+Mesh_Create_Cone :: proc(segments: int = 32) -> (Mesh, bool) {
+	segCount := segments
+	if segCount < 3 do segCount = 3
+
+	vertices := make([dynamic]Vertex, 0, segCount * 6, context.temp_allocator)
+	radius := f32(0.5)
+	height := f32(1.0)
+	apex := eng.Vec3{0, 0.5, 0}
+	center := eng.Vec3{0, -0.5, 0}
+
+	for i in 0 ..< segCount {
+		a0 := f32(i) / f32(segCount) * f32(2.0 * math.PI)
+		a1 := f32(i + 1) / f32(segCount) * f32(2.0 * math.PI)
+		c0 := math.cos(a0)
+		s0 := math.sin(a0)
+		c1 := math.cos(a1)
+		s1 := math.sin(a1)
+
+		p0 := eng.Vec3{c0 * radius, -0.5, s0 * radius}
+		p1 := eng.Vec3{c1 * radius, -0.5, s1 * radius}
+		n0 := eng.Vec3_Normalize(eng.Vec3{c0, radius / height, s0})
+		n1 := eng.Vec3_Normalize(eng.Vec3{c1, radius / height, s1})
+		na := eng.Vec3_Normalize(n0 + n1)
+
+		append(&vertices, Vertex{apex, na, {0.5, 1}})
+		append(&vertices, Vertex{p1, n1, {1, 0}})
+		append(&vertices, Vertex{p0, n0, {0, 0}})
+
+		append(&vertices, Vertex{center, {0, -1, 0}, {0.5, 0.5}})
+		append(&vertices, Vertex{p0, {0, -1, 0}, {0, 0}})
+		append(&vertices, Vertex{p1, {0, -1, 0}, {1, 0}})
+	}
+
+	return Mesh_Create(vertices[:])
 }
 
 // Creates an XZ plane centered at the origin.

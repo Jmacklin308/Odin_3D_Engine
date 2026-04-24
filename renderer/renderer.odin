@@ -195,8 +195,29 @@ Renderer_Draw_Mesh :: proc(renderer: ^Renderer, mesh: ^Mesh, model: eng.Mat4, co
 	Shader_Set_Mat4(&renderer.defaultShader,   "uModel",        &modelCopy)
 	Shader_Set_Mat4(&renderer.defaultShader,   "uNormalMatrix", &normalMat)
 	Shader_Set_Vec3(&renderer.defaultShader,   "uColor",        color)
+	Shader_Set_Float(&renderer.defaultShader,  "uAlpha",        1.0)
 	Shader_Set_Float(&renderer.defaultShader,  "uDoubleSided",  1.0 if double_sided else 0.0)
 	Mesh_Draw(mesh)
+}
+
+// Draw a mesh with alpha blending enabled for this draw only.
+Renderer_Draw_Mesh_Alpha :: proc(renderer: ^Renderer, mesh: ^Mesh, model: eng.Mat4, color: eng.Vec3, alpha: f32, double_sided: bool = false) {
+	gl.Enable(gl.BLEND)
+	gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+	gl.DepthMask(gl.FALSE)
+
+	normalMat := eng.Mat4_Normal(model)
+	modelCopy := model
+	Shader_Set_Mat4(&renderer.defaultShader,   "uModel",        &modelCopy)
+	Shader_Set_Mat4(&renderer.defaultShader,   "uNormalMatrix", &normalMat)
+	Shader_Set_Vec3(&renderer.defaultShader,   "uColor",        color)
+	Shader_Set_Float(&renderer.defaultShader,  "uAlpha",        alpha)
+	Shader_Set_Float(&renderer.defaultShader,  "uDoubleSided",  1.0 if double_sided else 0.0)
+	Mesh_Draw(mesh)
+
+	gl.DepthMask(gl.TRUE)
+	gl.Disable(gl.BLEND)
+	Shader_Set_Float(&renderer.defaultShader,  "uAlpha",        1.0)
 }
 
 // Draw a mesh using a Transform struct.
@@ -424,6 +445,7 @@ layout(std140) uniform FrameUniforms {
 };
 
 uniform vec3  uColor;
+uniform float uAlpha;
 uniform float uDoubleSided;
 
 out vec4 fragColor;
@@ -442,7 +464,7 @@ void main() {
     vec3  specular = spec * uLightColor.xyz * 0.3;
 
     vec3 result = (uAmbient.xyz + diffuse + specular) * uColor;
-    fragColor   = vec4(result, 1.0);
+    fragColor   = vec4(result, uAlpha);
 }
 `
 

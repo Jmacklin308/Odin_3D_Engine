@@ -10,11 +10,17 @@ import "core:mem"
 // Package-level pointer so _mesh_resolver can reference it without a closure.
 @(private)
 _cube_mesh: ^rend.Mesh
+@(private)
+_pyramid_mesh: ^rend.Mesh
+@(private)
+_cone_mesh: ^rend.Mesh
 
 @(private)
 _mesh_resolver :: proc(name: string) -> (^rend.Mesh, bool) {
 	switch name {
 	case "cube": return _cube_mesh, _cube_mesh != nil
+	case "pyramid": return _pyramid_mesh, _pyramid_mesh != nil
+	case "cone": return _cone_mesh, _cone_mesh != nil
 	}
 	return nil, false
 }
@@ -23,6 +29,8 @@ Placement_Kind :: distinct int
 
 PLACEMENT_NONE :: Placement_Kind(0)
 PLACEMENT_CUBE :: Placement_Kind(1)
+PLACEMENT_PYRAMID :: Placement_Kind(2)
+PLACEMENT_CONE :: Placement_Kind(3)
 
 main :: proc() {
 	// for debugging!
@@ -83,6 +91,22 @@ main :: proc() {
 	defer rend.Mesh_Destroy(&cube)
 	_cube_mesh = &cube
 
+	pyramid, pyramidOk := rend.Mesh_Create_Pyramid()
+	if !pyramidOk {
+		fmt.eprintln("Failed to create pyramid mesh.")
+		return
+	}
+	defer rend.Mesh_Destroy(&pyramid)
+	_pyramid_mesh = &pyramid
+
+	cone, coneOk := rend.Mesh_Create_Cone()
+	if !coneOk {
+		fmt.eprintln("Failed to create cone mesh.")
+		return
+	}
+	defer rend.Mesh_Destroy(&cone)
+	_cone_mesh = &cone
+
 	// --- Scene / ECS setup ---
 	// World is ~10 MB; allocate on the heap to avoid stack overflow.
 	world := new(scene.World)
@@ -95,6 +119,16 @@ main :: proc() {
 	cubeKey, keyOk := scene.World_Register_Mesh(world, &cube, "cube")
 	if !keyOk {
 		fmt.eprintln("Failed to register cube mesh with scene.")
+		return
+	}
+	pyramidKey, pyramidKeyOk := scene.World_Register_Mesh(world, &pyramid, "pyramid")
+	if !pyramidKeyOk {
+		fmt.eprintln("Failed to register pyramid mesh with scene.")
+		return
+	}
+	coneKey, coneKeyOk := scene.World_Register_Mesh(world, &cone, "cone")
+	if !coneKeyOk {
+		fmt.eprintln("Failed to register cone mesh with scene.")
 		return
 	}
 
@@ -174,12 +208,15 @@ main :: proc() {
 		rend.UI_Label(&ui, {30, 73}, fmt.tprintf("FPS %.0f", fps), 1.5, ui.theme.textMuted)
 
 		if rend.UI_Button(&ui, "tool_translate", {30, 100, 80, 32}, "MOVE", currentMode == scene.GIZMO_MODE_TRANSLATE) {
+			placementKind = PLACEMENT_NONE
 			scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_TRANSLATE)
 		}
 		if rend.UI_Button(&ui, "tool_rotate", {120, 100, 80, 32}, "ROTATE", currentMode == scene.GIZMO_MODE_ROTATE) {
+			placementKind = PLACEMENT_NONE
 			scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_ROTATE)
 		}
 		if rend.UI_Button(&ui, "tool_scale", {210, 100, 80, 32}, "SCALE", currentMode == scene.GIZMO_MODE_SCALE) {
+			placementKind = PLACEMENT_NONE
 			scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_SCALE)
 		}
 
@@ -187,7 +224,7 @@ main :: proc() {
 		rend.UI_Label(&ui, {30, 167}, "RMB FLY   LMB SELECT/DRAG", 1.5, ui.theme.textMuted)
 		rend.UI_Label(&ui, {30, 186}, "SHIFT ADD   CTRL+Z/Y UNDO", 1.5, ui.theme.textMuted)
 
-		drawerW := f32(420.0)
+		drawerW := f32(560.0)
 		drawerH := f32(120.0)
 		drawerX := (screenSize.x - drawerW) * 0.5
 		drawerClosedY := screenSize.y - 18.0
@@ -210,9 +247,28 @@ main :: proc() {
 			cubeAngle := rend.UI_Time(&ui) * (0.65 + cubeHover * 3.0)
 			rend.UI_Model_Preview(&ui, {drawerX + 33, drawerY + 43, 52, 38}, &cube, cubeAngle, {0.8, 0.4, 0.2})
 			rend.UI_Label(&ui, {drawerX + 39, drawerY + 86}, "CUBE", 1.25, ui.theme.text)
+
+			pyramidSelected := placementKind == PLACEMENT_PYRAMID
+			if rend.UI_Button(&ui, "place_pyramid", {drawerX + 108, drawerY + 40, 82, 62}, "", pyramidSelected) {
+				placementKind = PLACEMENT_PYRAMID
+			}
+			pyramidHover := rend.UI_Hover_Amount(&ui, "place_pyramid")
+			pyramidAngle := rend.UI_Time(&ui) * (0.65 + pyramidHover * 3.0)
+			rend.UI_Model_Preview(&ui, {drawerX + 123, drawerY + 43, 52, 38}, &pyramid, pyramidAngle, {0.95, 0.68, 0.22})
+			rend.UI_Label(&ui, {drawerX + 115, drawerY + 86}, "PYRAMID", 1.25, ui.theme.text)
+
+			coneSelected := placementKind == PLACEMENT_CONE
+			if rend.UI_Button(&ui, "place_cone", {drawerX + 198, drawerY + 40, 82, 62}, "", coneSelected) {
+				placementKind = PLACEMENT_CONE
+			}
+			coneHover := rend.UI_Hover_Amount(&ui, "place_cone")
+			coneAngle := rend.UI_Time(&ui) * (0.65 + coneHover * 3.0)
+			rend.UI_Model_Preview(&ui, {drawerX + 213, drawerY + 43, 52, 38}, &cone, coneAngle, {0.35, 0.75, 0.95})
+			rend.UI_Label(&ui, {drawerX + 220, drawerY + 86}, "CONE", 1.25, ui.theme.text)
+
 			if placementKind != PLACEMENT_NONE {
-				rend.UI_Label(&ui, {drawerX + 116, drawerY + 52}, "CLICK SCENE TO PLACE", 1.5, ui.theme.text)
-				rend.UI_Label(&ui, {drawerX + 116, drawerY + 72}, "ESC CANCELS PLACEMENT", 1.5, ui.theme.textMuted)
+				rend.UI_Label(&ui, {drawerX + 312, drawerY + 52}, "CLICK SCENE TO PLACE", 1.5, ui.theme.text)
+				rend.UI_Label(&ui, {drawerX + 312, drawerY + 72}, "ESC CANCELS PLACEMENT", 1.5, ui.theme.textMuted)
 			}
 		}
 		rend.UI_End(&ui)
@@ -220,9 +276,18 @@ main :: proc() {
 		uiCaptured := rend.UI_Wants_Mouse(&ui)
 
 		if !inp.cursorLocked {
-			if eng.Input_Key_Pressed(inp, eng.KEY_W) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_TRANSLATE)
-			if eng.Input_Key_Pressed(inp, eng.KEY_E) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_ROTATE)
-			if eng.Input_Key_Pressed(inp, eng.KEY_R) do scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_SCALE)
+			if eng.Input_Key_Pressed(inp, eng.KEY_W) {
+				placementKind = PLACEMENT_NONE
+				scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_TRANSLATE)
+			}
+			if eng.Input_Key_Pressed(inp, eng.KEY_E) {
+				placementKind = PLACEMENT_NONE
+				scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_ROTATE)
+			}
+			if eng.Input_Key_Pressed(inp, eng.KEY_R) {
+				placementKind = PLACEMENT_NONE
+				scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_SCALE)
+			}
 
 			FOCUS_DOUBLE_TAP_WINDOW :: f32(0.25)
 			if eng.Input_Key_Pressed(inp, eng.KEY_F) {
@@ -281,6 +346,30 @@ main :: proc() {
 				scene.World_Add_MeshRef(world, e, scene.MeshRef{
 					meshKey = cubeKey,
 					color   = {0.8, 0.4, 0.2},
+				})
+				scene.Selection_Set_Single(selection, world, e)
+			case PLACEMENT_PYRAMID:
+				e := scene.World_Entity_Create(world)
+				scene.World_Add_Transform(world, e, eng.Transform{
+					position = {placePos.x, 0.2, placePos.z},
+					rotation = eng.QUAT_IDENTITY,
+					scale    = {0.4, 0.4, 0.4},
+				})
+				scene.World_Add_MeshRef(world, e, scene.MeshRef{
+					meshKey = pyramidKey,
+					color   = {0.95, 0.68, 0.22},
+				})
+				scene.Selection_Set_Single(selection, world, e)
+			case PLACEMENT_CONE:
+				e := scene.World_Entity_Create(world)
+				scene.World_Add_Transform(world, e, eng.Transform{
+					position = {placePos.x, 0.2, placePos.z},
+					rotation = eng.QUAT_IDENTITY,
+					scale    = {0.4, 0.4, 0.4},
+				})
+				scene.World_Add_MeshRef(world, e, scene.MeshRef{
+					meshKey = coneKey,
+					color   = {0.35, 0.75, 0.95},
 				})
 				scene.Selection_Set_Single(selection, world, e)
 			}
