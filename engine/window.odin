@@ -156,3 +156,9 @@ Window_Set_Title :: proc(win: ^Window, title: cstring) {
 	win.title = title
 	glfw.SetWindowTitle(win.handle, title)
 }
+
+// Applies VSync immediately for the active OpenGL context.
+Window_Set_VSync :: proc(win: ^Window, enabled: bool) {
+	if win == nil || win.handle == nil do return
+	glfw.SwapInterval(enabled ? 1 : 0)
+}

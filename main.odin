@@ -50,9 +50,11 @@ main :: proc() {
 	}
 
 	// ------------------- Rest of Program -------------------
+	editorSettings, settingsLoaded := Editor_Settings_Load()
+
 	// load our config
 	cfg := eng.DEFAULT_CONFIG
-	cfg.debug.showGrid = true
+	Editor_Settings_Apply_Config(&editorSettings, &cfg)
 
 	if !eng.Init(cfg) do return
 	defer eng.Shutdown()
@@ -64,11 +66,20 @@ main :: proc() {
 		return
 	}
 	defer rend.Renderer_Shutdown(&r)
+	rend.Renderer_Set_Clear_Color(&r, Editor_Settings_Clear_Color(&editorSettings))
 
 	ui: rend.UI_Context
 	rend.UI_Init(&ui)
 	defer rend.UI_Shutdown(&ui)
-	
+
+	notifications: rend.Notification_Tray
+	rend.Notification_Tray_Init(&notifications)
+	defer rend.Notification_Tray_Shutdown(&notifications)
+	if settingsLoaded {
+		rend.Notification_Tray_Push(&notifications, "EDITOR ONLINE - SETTINGS LOADED", .SUCCESS, 2.8)
+	} else {
+		rend.Notification_Tray_Push(&notifications, "EDITOR ONLINE", .SUCCESS, 2.8)
+	}
 
 	gizmo: scene.Transform_Gizmo
 	if !scene.Transform_Gizmo_Init(&gizmo) {
@@ -166,6 +177,7 @@ main :: proc() {
 	placementKind := PLACEMENT_NONE
 	placeDrawerOpen := false
 	placeDrawerT: f32
+	settingsOpen := false
 
 	for eng.Running() {
 		eng.Begin_Frame()
@@ -179,11 +191,18 @@ main :: proc() {
 		shiftDown := eng.Input_Key_Down(inp, eng.KEY_LEFT_SHIFT)
 
 		if eng.Input_Key_Pressed(inp, eng.KEY_ESCAPE) {
-			if placementKind != PLACEMENT_NONE {
+			if settingsOpen {
+				settingsOpen = false
+			} else if placementKind != PLACEMENT_NONE {
 				placementKind = PLACEMENT_NONE
+				rend.Notification_Tray_Push(&notifications, "PLACEMENT CANCELLED", .WARNING)
 			} else {
 				eng.Quit()
 			}
+		}
+
+		if !inp.cursorLocked && eng.Input_Key_Pressed(inp, eng.KEY_F10) {
+			settingsOpen = !settingsOpen
 		}
 
 		if !scene.Transform_Gizmo_Is_Dragging(&gizmo) {
@@ -195,10 +214,10 @@ main :: proc() {
 			orbiting := orbitOk && altDown && rmbDown
 
 			if orbiting {
-				eng.Camera_Orbit_Update_RMB(&cam, inp, win, orbitCenter, altPressed)
+				eng.Camera_Orbit_Update_RMB(&cam, inp, win, orbitCenter, altPressed, Editor_Settings_Camera_Params(&editorSettings))
 				if !zoomRequested do eng.Camera_Orbit_Zoom_Cancel(&orbitZoom)
 			} else {
-				eng.Camera_FPS_Update_RMB(&cam, inp, win, dt)
+				eng.Camera_FPS_Update_RMB(&cam, inp, win, dt, Editor_Settings_Camera_Params(&editorSettings))
 				if rmbDown do eng.Camera_Orbit_Zoom_Cancel(&orbitZoom)
 			}
 
@@ -219,14 +238,16 @@ main :: proc() {
 		eng.Camera_Focus_Update(&focusAnim, &cam, dt)
 
 		screenSize := eng.Vec2{f32(win.width), f32(win.height)}
+		uiScreenSize := screenSize / clamp(editorSettings.editorScale, 0.75, 1.75)
 		additiveSelection := shiftDown
 		currentMode := scene.Transform_Gizmo_Get_Mode(&gizmo)
 		drawerTarget := f32(1.0) if placeDrawerOpen else f32(0.0)
 		drawerEase := 1.0 - math.pow(f32(0.5), dt * 10.0)
 		placeDrawerT = eng.F32_Lerp(placeDrawerT, drawerTarget, clamp(drawerEase, 0, 1))
 
-		rend.UI_Begin(&ui, &r, screenSize, inp, dt)
-		rend.UI_Panel(&ui, {14, 14, 292, 214})
+		rend.UI_Begin(&ui, &r, screenSize, inp, dt, editorSettings.editorScale)
+		uiScreenSize = rend.UI_Layout_Screen_Size(&ui)
+		rend.UI_Panel(&ui, {14, 14, 292, 250})
 		rend.UI_Label(&ui, {30, 30}, "ODIN 3D ENGINE", 2.0)
 		rend.UI_Label(&ui, {30, 54}, fmt.tprintf("ENTITIES %d  SELECTED %d", world.count, selection.count), 1.5, ui.theme.textMuted)
 		rend.UI_Label(&ui, {30, 73}, fmt.tprintf("FPS %.0f", fps), 1.5, ui.theme.textMuted)
@@ -234,25 +255,33 @@ main :: proc() {
 		if rend.UI_Button(&ui, "tool_translate", {30, 100, 80, 32}, "MOVE", currentMode == scene.GIZMO_MODE_TRANSLATE) {
 			placementKind = PLACEMENT_NONE
 			scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_TRANSLATE)
+			rend.Notification_Tray_Push(&notifications, "MOVE TOOL READY", .INFO)
 		}
 		if rend.UI_Button(&ui, "tool_rotate", {120, 100, 80, 32}, "ROTATE", currentMode == scene.GIZMO_MODE_ROTATE) {
 			placementKind = PLACEMENT_NONE
 			scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_ROTATE)
+			rend.Notification_Tray_Push(&notifications, "ROTATE TOOL READY", .INFO)
 		}
 		if rend.UI_Button(&ui, "tool_scale", {210, 100, 80, 32}, "SCALE", currentMode == scene.GIZMO_MODE_SCALE) {
 			placementKind = PLACEMENT_NONE
 			scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_SCALE)
+			rend.Notification_Tray_Push(&notifications, "SCALE TOOL READY", .INFO)
 		}
 
 		rend.UI_Label(&ui, {30, 148}, "W/E/R TOOLS   F FOCUS", 1.5, ui.theme.textMuted)
 		rend.UI_Label(&ui, {30, 167}, "RMB FLY   LMB SELECT/DRAG", 1.5, ui.theme.textMuted)
 		rend.UI_Label(&ui, {30, 186}, "SHIFT ADD   CTRL+Z/Y UNDO", 1.5, ui.theme.textMuted)
+		rend.UI_Label(&ui, {30, 205}, "CTRL+S/O SAVE/LOAD", 1.5, ui.theme.textMuted)
+		if rend.UI_Button(&ui, "settings_open", {30, 224, 116, 28}, "SETTINGS", settingsOpen) {
+			settingsOpen = !settingsOpen
+		}
+		rend.UI_Label(&ui, {158, 230}, "F10", 1.35, ui.theme.textMuted)
 
 		drawerW := f32(560.0)
 		drawerH := f32(120.0)
-		drawerX := (screenSize.x - drawerW) * 0.5
-		drawerClosedY := screenSize.y - 18.0
-		drawerOpenY := screenSize.y - drawerH
+		drawerX := (uiScreenSize.x - drawerW) * 0.5
+		drawerClosedY := uiScreenSize.y - 18.0
+		drawerOpenY := uiScreenSize.y - drawerH
 		drawerY := eng.F32_Lerp(drawerClosedY, drawerOpenY, placeDrawerT)
 		arrowText := "^" if !placeDrawerOpen else "V"
 
@@ -266,6 +295,7 @@ main :: proc() {
 			cubeSelected := placementKind == PLACEMENT_CUBE
 			if rend.UI_Button(&ui, "place_cube", {drawerX + 18, drawerY + 40, 82, 62}, "", cubeSelected) {
 				placementKind = PLACEMENT_CUBE
+				rend.Notification_Tray_Push(&notifications, "CUBE GHOST LOADED", .PLACE)
 			}
 			cubeHover := rend.UI_Hover_Amount(&ui, "place_cube")
 			cubeAngle := rend.UI_Time(&ui) * (0.65 + cubeHover * 3.0)
@@ -275,6 +305,7 @@ main :: proc() {
 			pyramidSelected := placementKind == PLACEMENT_PYRAMID
 			if rend.UI_Button(&ui, "place_pyramid", {drawerX + 108, drawerY + 40, 82, 62}, "", pyramidSelected) {
 				placementKind = PLACEMENT_PYRAMID
+				rend.Notification_Tray_Push(&notifications, "PYRAMID GHOST LOADED", .PLACE)
 			}
 			pyramidHover := rend.UI_Hover_Amount(&ui, "place_pyramid")
 			pyramidAngle := rend.UI_Time(&ui) * (0.65 + pyramidHover * 3.0)
@@ -284,6 +315,7 @@ main :: proc() {
 			coneSelected := placementKind == PLACEMENT_CONE
 			if rend.UI_Button(&ui, "place_cone", {drawerX + 198, drawerY + 40, 82, 62}, "", coneSelected) {
 				placementKind = PLACEMENT_CONE
+				rend.Notification_Tray_Push(&notifications, "CONE GHOST LOADED", .PLACE)
 			}
 			coneHover := rend.UI_Hover_Amount(&ui, "place_cone")
 			coneAngle := rend.UI_Time(&ui) * (0.65 + coneHover * 3.0)
@@ -295,6 +327,9 @@ main :: proc() {
 				rend.UI_Label(&ui, {drawerX + 312, drawerY + 72}, "ESC CANCELS PLACEMENT", 1.5, ui.theme.textMuted)
 			}
 		}
+		if settingsOpen {
+			Editor_Settings_Draw_Menu(&ui, &editorSettings, &notifications, &r, win, uiScreenSize)
+		}
 		rend.UI_End(&ui)
 
 		uiCaptured := rend.UI_Wants_Mouse(&ui)
@@ -303,14 +338,17 @@ main :: proc() {
 			if eng.Input_Key_Pressed(inp, eng.KEY_W) {
 				placementKind = PLACEMENT_NONE
 				scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_TRANSLATE)
+				rend.Notification_Tray_Push(&notifications, "MOVE TOOL READY", .INFO)
 			}
 			if eng.Input_Key_Pressed(inp, eng.KEY_E) {
 				placementKind = PLACEMENT_NONE
 				scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_ROTATE)
+				rend.Notification_Tray_Push(&notifications, "ROTATE TOOL READY", .INFO)
 			}
 			if eng.Input_Key_Pressed(inp, eng.KEY_R) {
 				placementKind = PLACEMENT_NONE
 				scene.Transform_Gizmo_Set_Mode(&gizmo, scene.GIZMO_MODE_SCALE)
+				rend.Notification_Tray_Push(&notifications, "SCALE TOOL READY", .INFO)
 			}
 
 			FOCUS_DOUBLE_TAP_WINDOW :: f32(0.25)
@@ -333,24 +371,44 @@ main :: proc() {
 
 			ctrlDown := eng.Input_Key_Down(inp, eng.KEY_LEFT_CONTROL)
 			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_S) {
-				scene.Scene_Save(world, "scene.o3ds")
+				if scene.Scene_Save(world, "scene.o3ds") {
+					rend.Notification_Tray_Push(&notifications, "SCENE SAVED", .SUCCESS)
+				} else {
+					rend.Notification_Tray_Push(&notifications, "SAVE FAILED", .ERROR, 3.0)
+				}
 			}
 			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_O) {
-				scene.Scene_Load(world, "scene.o3ds", _mesh_resolver)
+				if scene.Scene_Load(world, "scene.o3ds", _mesh_resolver) {
+					rend.Notification_Tray_Push(&notifications, "SCENE LOADED", .SUCCESS)
+				} else {
+					rend.Notification_Tray_Push(&notifications, "LOAD FAILED", .ERROR, 3.0)
+				}
 			}
 			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_Z) {
-				scene.Undo_Apply(&history, world, selection)
+				if scene.Undo_Apply(&history, world, selection) {
+					rend.Notification_Tray_Push(&notifications, "UNDONE PROP", .UNDO)
+				} else {
+					rend.Notification_Tray_Push(&notifications, "NOTHING TO UNDO", .WARNING)
+				}
 			}
 			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_Y) {
-				scene.Undo_Redo(&history, world, selection)
+				if scene.Undo_Redo(&history, world, selection) {
+					rend.Notification_Tray_Push(&notifications, "REDONE PROP", .UNDO)
+				} else {
+					rend.Notification_Tray_Push(&notifications, "NOTHING TO REDO", .WARNING)
+				}
 			}
 			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_C) {
 				scene.Clipboard_Copy(world, selection, &clipboard)
+				rend.Notification_Tray_Push(&notifications, "COPIED SELECTION", .SUCCESS)
 			}
 			if ctrlDown && eng.Input_Key_Pressed(inp, eng.KEY_V) {
 				pasteOrigin, pasteDir := scene.Scene_Ray_From_Screen(inp.mousePos, screenSize, &cam, win.aspect)
 				if ids, snap, ok := scene.Clipboard_Paste(world, selection, &clipboard, pasteOrigin, pasteDir); ok {
 					scene.Undo_Paste_Commit(&history, ids, snap)
+					rend.Notification_Tray_Push(&notifications, "PASTED SELECTION", .PLACE)
+				} else {
+					rend.Notification_Tray_Push(&notifications, "CLIPBOARD EMPTY", .WARNING)
 				}
 			}
 		}
@@ -372,6 +430,7 @@ main :: proc() {
 					color   = {0.8, 0.4, 0.2},
 				})
 				scene.Selection_Set_Single(selection, world, e)
+				rend.Notification_Tray_Push(&notifications, "CUBE PLACED", .PLACE)
 			case PLACEMENT_PYRAMID:
 				e := scene.World_Entity_Create(world)
 				scene.World_Add_Transform(world, e, eng.Transform{
@@ -384,6 +443,7 @@ main :: proc() {
 					color   = {0.95, 0.68, 0.22},
 				})
 				scene.Selection_Set_Single(selection, world, e)
+				rend.Notification_Tray_Push(&notifications, "PYRAMID PLACED", .PLACE)
 			case PLACEMENT_CONE:
 				e := scene.World_Entity_Create(world)
 				scene.World_Add_Transform(world, e, eng.Transform{
@@ -396,6 +456,7 @@ main :: proc() {
 					color   = {0.35, 0.75, 0.95},
 				})
 				scene.Selection_Set_Single(selection, world, e)
+				rend.Notification_Tray_Push(&notifications, "CONE PLACED", .PLACE)
 			}
 		}
 
@@ -438,6 +499,8 @@ main :: proc() {
 			}
 		}
 
+		rend.Notification_Tray_Update(&notifications, dt)
+
 		rend.Renderer_Begin(&r, &cam, win.aspect)
 		scene.Scene_Render_System(world, selection)
 		scene.Transform_Gizmo_Draw(&gizmo, &r, world, selection, &cam, screenSize)
@@ -446,6 +509,7 @@ main :: proc() {
 			rend.Renderer_Draw_Marquee(&r, screenSize, marquee.start, marquee.current)
 		}
 		rend.UI_Render(&ui)
+		rend.Notification_Tray_Render(&notifications, &r, screenSize, editorSettings.editorScale)
 		rend.Renderer_End(&r)
 
 		eng.End_Frame()

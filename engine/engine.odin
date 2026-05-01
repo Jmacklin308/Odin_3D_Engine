@@ -141,3 +141,8 @@ Get_FPS :: proc() -> f32 {
 Get_Config :: proc() -> EngineConfig {
 	return _eng.config
 }
+
+// Updates whether renderer-owned debug helpers should be visible.
+Set_Debug_Show_Grid :: proc(show: bool) {
+	_eng.config.debug.showGrid = show
+}

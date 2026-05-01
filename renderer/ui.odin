@@ -67,6 +67,8 @@ UI_Context :: struct {
 	renderer:   ^Renderer,
 	input:      ^eng.Input,
 	screenSize: eng.Vec2,
+	layoutSize: eng.Vec2,
+	scale:      f32,
 	dt:         f32,
 	time:       f32,
 	theme:     UI_Theme,
@@ -98,10 +100,12 @@ UI_Shutdown :: proc(ctx: ^UI_Context) {
 	ctx^ = {}
 }
 
-UI_Begin :: proc(ctx: ^UI_Context, renderer: ^Renderer, screenSize: eng.Vec2, input: ^eng.Input, dt: f32) {
+UI_Begin :: proc(ctx: ^UI_Context, renderer: ^Renderer, screenSize: eng.Vec2, input: ^eng.Input, dt: f32, uiScale: f32 = 1.0) {
 	ctx.renderer      = renderer
 	ctx.input         = input
 	ctx.screenSize    = screenSize
+	ctx.scale         = clamp(uiScale, 0.75, 1.75)
+	ctx.layoutSize    = screenSize / ctx.scale
 	ctx.dt            = dt
 	ctx.time         += dt
 	ctx.hot           = 0
@@ -137,6 +141,10 @@ UI_Wants_Mouse :: proc(ctx: ^UI_Context) -> bool {
 	return ctx.mouseCaptured || ctx.hot != 0 || ctx.active != 0
 }
 
+UI_Layout_Screen_Size :: proc(ctx: ^UI_Context) -> eng.Vec2 {
+	return ctx.layoutSize
+}
+
 UI_Panel :: proc(ctx: ^UI_Context, rect: UI_Rect) {
 	min, max := _ui_rect_bounds(rect)
 	_ui_queue_rect(ctx, min + eng.Vec2{4, 5}, max + eng.Vec2{4, 5}, ctx.theme.shadow)
@@ -151,7 +159,7 @@ UI_Rect_Fill :: proc(ctx: ^UI_Context, rect: UI_Rect, color: eng.Vec4) {
 
 UI_Model_Preview :: proc(ctx: ^UI_Context, rect: UI_Rect, mesh: ^Mesh, angle: f32, color: eng.Vec3 = {0.8, 0.4, 0.2}) {
 	min, max := _ui_rect_bounds(rect)
-	append(&ctx.models, UI_Model_Command{mesh = mesh, min = min, max = max, angle = angle, color = color})
+	append(&ctx.models, UI_Model_Command{mesh = mesh, min = _ui_to_screen_vec(ctx, min), max = _ui_to_screen_vec(ctx, max), angle = angle, color = color})
 }
 
 UI_Label :: proc(ctx: ^UI_Context, pos: eng.Vec2, text: string, scale: f32 = 2.0, color: eng.Vec4 = UI_DEFAULT_THEME.text) {
@@ -174,8 +182,10 @@ UI_Button :: proc(ctx: ^UI_Context, id: string, rect: UI_Rect, text: string, sel
 	hash := _ui_hash_string(id)
 	state := _ui_state(ctx, hash)
 	min, max := _ui_rect_bounds(rect)
+	screenMin := _ui_to_screen_vec(ctx, min)
+	screenMax := _ui_to_screen_vec(ctx, max)
 
-	hovered := ctx.input != nil && _ui_point_in_rect(ctx.input.mousePos, min, max)
+	hovered := ctx.input != nil && _ui_point_in_rect(ctx.input.mousePos, screenMin, screenMax)
 	pressed := hovered && ctx.input != nil && eng.Input_Mouse_Pressed(ctx.input, eng.MOUSE_LEFT)
 	released := hovered && ctx.input != nil && eng.Input_Mouse_Released(ctx.input, eng.MOUSE_LEFT)
 
@@ -219,6 +229,85 @@ UI_Button :: proc(ctx: ^UI_Context, id: string, rect: UI_Rect, text: string, sel
 	return clicked
 }
 
+UI_Slider :: proc(ctx: ^UI_Context, id: string, rect: UI_Rect, value: ^f32, minValue, maxValue: f32) -> bool {
+	hash := _ui_hash_string(id)
+	state := _ui_state(ctx, hash)
+	min, max := _ui_rect_bounds(rect)
+	screenMin := _ui_to_screen_vec(ctx, min)
+	screenMax := _ui_to_screen_vec(ctx, max)
+
+	hovered := ctx.input != nil && _ui_point_in_rect(ctx.input.mousePos, screenMin, screenMax)
+	pressed := hovered && ctx.input != nil && eng.Input_Mouse_Pressed(ctx.input, eng.MOUSE_LEFT)
+	if hovered {
+		ctx.hot = hash
+		ctx.mouseCaptured = true
+	}
+	if pressed {
+		ctx.active = hash
+		ctx.mouseCaptured = true
+	}
+
+	isActive := ctx.active == hash
+	changed := false
+	if isActive && ctx.input != nil && eng.Input_Mouse_Down(ctx.input, eng.MOUSE_LEFT) {
+		range := maxValue - minValue
+		if range > 0 {
+			t := clamp((ctx.input.mousePos.x - screenMin.x) / (screenMax.x - screenMin.x), 0, 1)
+			newValue := minValue + range * t
+			if newValue != value^ {
+				value^ = newValue
+				changed = true
+			}
+		}
+	}
+
+	hoverTarget := hovered ? f32(1) : f32(0)
+	activeTarget := isActive ? f32(1) : f32(0)
+	state.hoverT  = _ui_approach(state.hoverT, hoverTarget, ctx.dt, 13.0)
+	state.activeT = _ui_approach(state.activeT, activeTarget, ctx.dt, 16.0)
+
+	t := f32(0)
+	if maxValue > minValue do t = clamp((value^ - minValue) / (maxValue - minValue), 0, 1)
+	trackY := min.y + rect.h * 0.5
+	trackMin := eng.Vec2{min.x, trackY - 3.0}
+	trackMax := eng.Vec2{max.x, trackY + 3.0}
+	fillMax := eng.Vec2{eng.F32_Lerp(min.x, max.x, t), trackMax.y}
+	knobX := fillMax.x
+	knobHalf := 6.0 + state.hoverT * 2.0 + state.activeT * 2.0
+
+	base := ctx.theme.textMuted
+	base.a = 0.22
+	fill := _ui_color_lerp(ctx.theme.panelAccent, ctx.theme.text, state.activeT * 0.28)
+	fill.a = 0.92
+	_ui_queue_rect(ctx, trackMin, trackMax, base)
+	_ui_queue_rect(ctx, trackMin, fillMax, fill)
+	_ui_queue_rect(ctx, {knobX - knobHalf, trackY - 10.0}, {knobX + knobHalf, trackY + 10.0}, ctx.theme.shadow)
+	_ui_queue_rect(ctx, {knobX - knobHalf, trackY - 8.0}, {knobX + knobHalf, trackY + 8.0}, fill)
+
+	return changed
+}
+
+UI_Toggle :: proc(ctx: ^UI_Context, id: string, rect: UI_Rect, text: string, on: bool) -> bool {
+	clicked := UI_Button(ctx, id, rect, text, on)
+	min, max := _ui_rect_bounds(rect)
+
+	trackMin := eng.Vec2{max.x - 35.0, min.y + 9.0}
+	trackMax := eng.Vec2{max.x - 13.0, max.y - 9.0}
+	trackColor := ctx.theme.textMuted
+	trackColor.a = 0.22
+	if on {
+		trackColor = ctx.theme.panelAccent
+		trackColor.a = 0.80
+	}
+	_ui_queue_rect(ctx, trackMin, trackMax, trackColor)
+
+	knobX := trackMin.x + 3.0
+	if on do knobX = trackMax.x - 8.0
+	_ui_queue_rect(ctx, {knobX, trackMin.y + 3.0}, {knobX + 5.0, trackMax.y - 3.0}, ctx.theme.text)
+
+	return clicked
+}
+
 _ui_rect_bounds :: proc(rect: UI_Rect) -> (min, max: eng.Vec2) {
 	min = {rect.x, rect.y}
 	max = {rect.x + rect.w, rect.y + rect.h}
@@ -226,11 +315,15 @@ _ui_rect_bounds :: proc(rect: UI_Rect) -> (min, max: eng.Vec2) {
 }
 
 _ui_queue_rect :: proc(ctx: ^UI_Context, min, max: eng.Vec2, color: eng.Vec4) {
-	append(&ctx.rects, UI_Rect_Command{min = min, max = max, color = color})
+	append(&ctx.rects, UI_Rect_Command{min = _ui_to_screen_vec(ctx, min), max = _ui_to_screen_vec(ctx, max), color = color})
 }
 
 _ui_queue_text :: proc(ctx: ^UI_Context, pos: eng.Vec2, text: string, scale: f32, color: eng.Vec4, shadow: bool) {
-	append(&ctx.texts, UI_Text_Command{pos = pos, text = text, scale = scale, color = color, shadow = shadow})
+	append(&ctx.texts, UI_Text_Command{pos = _ui_to_screen_vec(ctx, pos), text = text, scale = scale * ctx.scale, color = color, shadow = shadow})
+}
+
+_ui_to_screen_vec :: proc(ctx: ^UI_Context, v: eng.Vec2) -> eng.Vec2 {
+	return v * ctx.scale
 }
 
 _ui_state :: proc(ctx: ^UI_Context, id: u64) -> ^UI_Widget_State {

@@ -114,12 +114,9 @@ Renderer_Init :: proc(renderer: ^Renderer) -> bool {
 		gl.UniformBlockBinding(renderer.instancedShader.id, iBlockIdx, 0)
 	}
 
-	cfg := eng.Get_Config()
-	if cfg.debug.showGrid {
-		renderer.gridReady = Grid_Init(&renderer.grid)
-		if !renderer.gridReady {
-			fmt.eprintln("[Renderer] Grid init failed — continuing without grid.")
-		}
+	renderer.gridReady = Grid_Init(&renderer.grid)
+	if !renderer.gridReady {
+		fmt.eprintln("[Renderer] Grid init failed — continuing without grid.")
 	}
 
 	return true
